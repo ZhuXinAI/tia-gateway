@@ -314,41 +314,6 @@ Dry-run the package contents:
 npm pack --dry-run
 ```
 
-## Trusted Publisher Release
-
-`tia-gateway` is set up for GitHub Actions + npm trusted publishing, without `NPM_TOKEN`.
-
-Before the first publish:
-
-1. Create and push the GitHub repository
-2. Update `package.json` so `repository.url` exactly matches the GitHub repo you will publish from
-3. On npm, open the package settings for `tia-gateway` and add a Trusted Publisher for:
-   - your GitHub user or org
-   - your repository name
-   - workflow filename: `publish.yml`
-4. Use a GitHub-hosted runner only
-
-To publish the first version after trusted publishing is configured:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-That tag triggers `.github/workflows/publish.yml`, which will run CI checks and publish the package to npm using OIDC.
-
-Notes:
-
-- npm’s current trusted-publisher docs say the workflow filename must match exactly, including `.yml`
-- npm also requires `package.json` `repository.url` to exactly match the GitHub repository used for publication
-- with trusted publishing, npm automatically generates provenance for public packages from public repos, so no `NPM_TOKEN` is needed
-
-Source references:
-
-- [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/)
-- [npm provenance statements](https://docs.npmjs.com/generating-provenance-statements/)
-- [GitHub publishing Node.js packages](https://docs.github.com/en/actions/tutorials/publish-packages/publish-nodejs-packages)
-
 ## Attribution
 
 This project is directly inspired by [`formulahendry/wechat-acp`](https://github.com/formulahendry/wechat-acp).
