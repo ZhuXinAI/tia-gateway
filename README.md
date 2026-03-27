@@ -1,6 +1,6 @@
 # tia-gateway
 
-Bridge chat channels to agent protocols, starting with WeChat and Lark on the channel side, and ACP on the protocol side.
+Connect IM channels with agent protocols through a unified gateway.
 
 `tia-gateway` is designed as a gateway runtime rather than an ACP-only bridge:
 
