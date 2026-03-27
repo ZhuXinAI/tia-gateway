@@ -1,0 +1,29 @@
+{
+  "gateway": {
+    "idleTimeoutMs": 86400000,
+    "maxConcurrentSessions": 10,
+    "logLevel": "info"
+  },
+  "protocol": {
+    "type": "acp",
+    "agent": {
+      "preset": "codex",
+      "cwd": "${PWD}",
+      "showThoughts": false
+    }
+  },
+  "channels": [
+    {
+      "type": "wechat",
+      "id": "wechat-main",
+      "dataDirectoryPath": "~/.tia-gateway/channels/wechat-main"
+    },
+    {
+      "type": "lark",
+      "id": "lark-main",
+      "appId": "${LARK_APP_ID}",
+      "appSecret": "${LARK_APP_SECRET}",
+      "groupRequireMention": true
+    }
+  ]
+}
