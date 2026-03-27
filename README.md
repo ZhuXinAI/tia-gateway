@@ -48,7 +48,7 @@ That means first-run setup does not require a config file just to get started.
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22 or newer
 - A WeChat environment that can use the iLink bot API
 - Lark app credentials if you enable the Lark channel
 - An ACP-compatible agent available locally or through `npx`
