@@ -28,7 +28,26 @@ export interface RawLarkChannelConfig {
   groupRequireMention?: boolean
 }
 
-export type RawChannelConfig = RawWechatChannelConfig | RawLarkChannelConfig
+export interface RawTelegramChannelConfig {
+  id?: string
+  type: 'telegram'
+  botToken: string
+}
+
+export interface RawWhatsAppChannelConfig {
+  id?: string
+  type: 'whatsapp'
+  authDirectoryPath?: string
+  forceLogin?: boolean
+  groupRequireMention?: boolean
+  reconnectDelayMs?: number
+}
+
+export type RawChannelConfig =
+  | RawWechatChannelConfig
+  | RawLarkChannelConfig
+  | RawTelegramChannelConfig
+  | RawWhatsAppChannelConfig
 
 export interface RawGatewayConfig {
   gateway?: {
@@ -61,7 +80,26 @@ export interface ResolvedLarkChannelConfig {
   groupRequireMention: boolean
 }
 
-export type ResolvedChannelConfig = ResolvedWechatChannelConfig | ResolvedLarkChannelConfig
+export interface ResolvedTelegramChannelConfig {
+  id: string
+  type: 'telegram'
+  botToken: string
+}
+
+export interface ResolvedWhatsAppChannelConfig {
+  id: string
+  type: 'whatsapp'
+  authDirectoryPath: string
+  forceLogin: boolean
+  groupRequireMention: boolean
+  reconnectDelayMs?: number
+}
+
+export type ResolvedChannelConfig =
+  | ResolvedWechatChannelConfig
+  | ResolvedLarkChannelConfig
+  | ResolvedTelegramChannelConfig
+  | ResolvedWhatsAppChannelConfig
 
 export interface ResolvedGatewayConfig {
   gateway: {
@@ -252,6 +290,27 @@ function resolveChannels(
           appId: channel.appId,
           appSecret: channel.appSecret,
           groupRequireMention: channel.groupRequireMention ?? true
+        }
+
+      case 'telegram':
+        return {
+          id: channel.id ?? `telegram-${index + 1}`,
+          type: 'telegram',
+          botToken: channel.botToken
+        }
+
+      case 'whatsapp':
+        return {
+          id: channel.id ?? `whatsapp-${index + 1}`,
+          type: 'whatsapp',
+          authDirectoryPath: resolvePath(
+            input.baseDir,
+            channel.authDirectoryPath ??
+              join(defaultStorageDir(), 'channels', channel.id ?? `whatsapp-${index + 1}`)
+          ),
+          forceLogin: input.forceLogin || channel.forceLogin || false,
+          groupRequireMention: channel.groupRequireMention ?? true,
+          reconnectDelayMs: channel.reconnectDelayMs
         }
     }
   })

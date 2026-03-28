@@ -1,33 +1,20 @@
 #!/usr/bin/env node
 
 import { once } from 'node:events'
-import { parseArgs } from 'node:util'
 import qrcodeTerminal from 'qrcode-terminal'
 import { createChannels } from '../channels/index.js'
 import { loadGatewayConfig } from '../config.js'
+import {
+  hasConfiguredChannels,
+  readGatewayConfigFile,
+  resolveGatewayConfigPath
+} from '../cli/config.js'
+import { runOnboard } from '../cli/onboard.js'
+import { createCliProgram, type StartCommandOptions } from '../cli/options.js'
 import { GatewayApp } from '../core/gateway-app.js'
 import { createLogger } from '../logging.js'
 import { PACKAGE_NAME, PACKAGE_VERSION } from '../meta.js'
 import { createProtocolAdapter, listBuiltInAgents } from '../protocols/index.js'
-
-function printHelp(): void {
-  console.log(`${PACKAGE_NAME} ${PACKAGE_VERSION}`)
-  console.log('')
-  console.log('Usage:')
-  console.log('  tia-gateway start [options]')
-  console.log('  tia-gateway agents')
-  console.log('  tia-gateway --help')
-  console.log('')
-  console.log('Options:')
-  console.log('  --config, -c <file>     Path to tia-gateway config JSON')
-  console.log('  --agent <value>         ACP preset or raw ACP command override')
-  console.log('  --cwd <dir>             Working directory for the ACP agent')
-  console.log('  --show-thoughts         Forward ACP thinking messages to the channel')
-  console.log('  --login                 Force WeChat re-login before startup')
-  console.log('  --log-level <level>     debug | info | warn | error')
-  console.log('  --version, -v           Show version')
-  console.log('  --help, -h              Show help')
-}
 
 function printAgents(): void {
   console.log('Built-in ACP agents:')
@@ -36,67 +23,20 @@ function printAgents(): void {
   }
 }
 
-async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    allowPositionals: true,
-    options: {
-      config: {
-        type: 'string',
-        short: 'c'
-      },
-      agent: {
-        type: 'string'
-      },
-      cwd: {
-        type: 'string'
-      },
-      'show-thoughts': {
-        type: 'boolean'
-      },
-      login: {
-        type: 'boolean'
-      },
-      'log-level': {
-        type: 'string'
-      },
-      version: {
-        type: 'boolean',
-        short: 'v'
-      },
-      help: {
-        type: 'boolean',
-        short: 'h'
-      }
-    }
-  })
-
-  const command = positionals[0] ?? 'start'
-  if (values.help) {
-    printHelp()
-    return
-  }
-
-  if (values.version) {
-    console.log(PACKAGE_VERSION)
-    return
-  }
-
-  if (command === 'agents') {
-    printAgents()
-    return
-  }
-
-  if (command !== 'start') {
-    throw new Error(`Unknown command "${command}"`)
+async function startGatewayCommand(options: StartCommandOptions): Promise<void> {
+  const configPath = resolveGatewayConfigPath(options.config)
+  const existingConfig = await readGatewayConfigFile(configPath)
+  if (!hasConfiguredChannels(existingConfig)) {
+    console.log(`No configured channels found at ${configPath}. Starting interactive onboarding.`)
+    await runOnboard(configPath)
   }
 
   const config = await loadGatewayConfig({
-    filePath: values.config,
-    agentSelection: values.agent,
-    cwd: values.cwd,
-    showThoughts: values['show-thoughts'],
-    forceLogin: values.login,
-    logLevel: values['log-level'] as 'debug' | 'info' | 'warn' | 'error' | undefined
+    filePath: configPath,
+    agentSelection: options.agent,
+    cwd: options.cwd,
+    showThoughts: options.showThoughts,
+    logLevel: options.logLevel
   })
 
   const logger = createLogger(config.gateway.logLevel, PACKAGE_NAME)
@@ -110,6 +50,11 @@ async function main(): Promise<void> {
     onWechatQrCode: ({ channelId, value }) => {
       console.log('')
       console.log(`[${channelId}] Scan this WeChat QR code:`)
+      qrcodeTerminal.generate(value, { small: true })
+    },
+    onWhatsAppQrCode: ({ channelId, value }) => {
+      console.log('')
+      console.log(`[${channelId}] Scan this WhatsApp QR code:`)
       qrcodeTerminal.generate(value, { small: true })
     }
   })
@@ -148,6 +93,22 @@ async function main(): Promise<void> {
   })
 
   await once(process, 'beforeExit')
+}
+
+async function main(): Promise<void> {
+  const program = createCliProgram({
+    version: PACKAGE_VERSION,
+    onStart: (options) => startGatewayCommand(options),
+    onAgents: () => {
+      printAgents()
+    },
+    onOnboard: async (options) => {
+      const configPath = resolveGatewayConfigPath(options.config)
+      await runOnboard(configPath)
+    }
+  })
+
+  await program.parseAsync(process.argv)
 }
 
 main().catch((error) => {

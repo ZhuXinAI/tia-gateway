@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Add Telegram DM support through `telegraf`.
+- Add WhatsApp support through `@whiskeysockets/baileys`, including terminal QR login and reconnect handling.
+- Replace the old argument parser with a Commander-based CLI and add interactive `onboard` flows.
+- Auto-launch onboarding on `npx tia-gateway` when no channels are configured, including WeChat and WhatsApp re-login from the onboarding flow.
+
 ## 0.1.0
 
 - Bootstrap `tia-gateway` as a publishable npm package.

@@ -1,4 +1,4 @@
-export type ChannelType = 'wechat' | 'lark' | (string & {})
+export type ChannelType = 'wechat' | 'lark' | 'telegram' | 'whatsapp' | (string & {})
 export type AgentProtocolType = 'acp' | (string & {})
 
 export type TextContentBlock = {

@@ -24,6 +24,17 @@
       "appId": "${LARK_APP_ID}",
       "appSecret": "${LARK_APP_SECRET}",
       "groupRequireMention": true
+    },
+    {
+      "type": "telegram",
+      "id": "telegram-main",
+      "botToken": "${TELEGRAM_BOT_TOKEN}"
+    },
+    {
+      "type": "whatsapp",
+      "id": "whatsapp-main",
+      "authDirectoryPath": "~/.tia-gateway/channels/whatsapp-main",
+      "groupRequireMention": true
     }
   ]
 }

@@ -26,6 +26,8 @@ export type {
   ResolvedGatewayConfig,
   ResolvedChannelConfig,
   ResolvedLarkChannelConfig,
+  ResolvedTelegramChannelConfig,
+  ResolvedWhatsAppChannelConfig,
   ResolvedWechatChannelConfig
 } from './config.js'
 export type {

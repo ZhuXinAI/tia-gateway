@@ -4,14 +4,9 @@ Connect IM channels with agent protocols through a unified gateway.
 
 `tia-gateway` is designed as a gateway runtime rather than an ACP-only bridge:
 
-- Channel side: WeChat and Lark
+- Channel side: WeChat, Lark, Telegram, and WhatsApp
 - Protocol side: pluggable architecture, with ACP implemented first
 - Agent side: built-in ACP presets for common coding-agent CLIs plus raw custom commands
-
-Near-term roadmap:
-
-- WhatsApp support is planned very soon
-- Telegram support is planned very soon
 
 The first version is intentionally bootstrap-focused: make it easy to start from `npx`, scan a QR code, connect a real agent, and grow into a broader multi-channel / multi-protocol gateway.
 
@@ -19,7 +14,8 @@ The first version is intentionally bootstrap-focused: make it easy to start from
 
 - WeChat QR login with terminal QR rendering
 - Lark connector with websocket receive flow
-- Clear path to upcoming WhatsApp and Telegram channel connectors
+- Telegram bot connector for DM conversations
+- WhatsApp Web connector with terminal QR login and reconnect handling
 - Protocol abstraction layer so ACP is not hard-wired into the core
 - ACP adapter built on [`@agentclientprotocol/sdk`](https://www.npmjs.com/package/@agentclientprotocol/sdk)
 - One agent session per channel conversation
@@ -28,7 +24,7 @@ The first version is intentionally bootstrap-focused: make it easy to start from
 - Auto-allow ACP permission requests
 - Config-driven startup with good first-run defaults
 
-## First-Run Defaults
+## First-Run Onboarding
 
 If you just run:
 
@@ -36,21 +32,23 @@ If you just run:
 npx tia-gateway
 ```
 
-`tia-gateway` will:
+and there is no configured channel yet, `tia-gateway` will:
 
-1. Default the protocol to `acp`
-2. Default the agent preset to `codex`
-3. Default the channel list to one `wechat` channel
-4. Fetch the ACP agent package through `npx -y` if needed
-5. Print the WeChat QR code in the terminal
+1. Launch interactive onboarding
+2. Ask which channel you want to configure
+3. Walk through credentials or QR login for that channel
+4. Save `tia-gateway.config.json`
+5. Start the gateway with the newly saved config
 
-That means first-run setup does not require a config file just to get started.
+If a config already exists, `npx tia-gateway` starts the gateway immediately.
 
 ## Requirements
 
 - Node.js 22 or newer
 - A WeChat environment that can use the iLink bot API
 - Lark app credentials if you enable the Lark channel
+- A Telegram bot token if you enable the Telegram channel
+- A phone that can link WhatsApp Web if you enable the WhatsApp channel
 - An ACP-compatible agent available locally or through `npx`
 
 ## Quick Start
@@ -59,6 +57,12 @@ Start with the zero-config bootstrap path:
 
 ```bash
 npx tia-gateway
+```
+
+Run onboarding again later:
+
+```bash
+npx tia-gateway onboard
 ```
 
 Or choose a specific built-in ACP agent:
@@ -75,13 +79,11 @@ Or use a raw ACP command:
 npx tia-gateway --agent "npx my-agent --acp"
 ```
 
-On first run with the default WeChat path, the gateway will:
+When you want to explicitly skip onboarding and just start with the saved config:
 
-1. Start WeChat QR login
-2. Render a QR code in the terminal
-3. Save the WeChat session under `~/.tia-gateway/channels/<channel-id>`
-4. Start polling WeChat messages
-5. Forward each conversation to a dedicated ACP agent session
+```bash
+npx tia-gateway start
+```
 
 ## Built-In ACP Agent Presets
 
@@ -105,26 +107,35 @@ These resolve internally to concrete `command + args` pairs. Built-in presets us
 ## CLI Usage
 
 ```text
+tia-gateway [options]
 tia-gateway start [options]
+tia-gateway onboard [options]
 tia-gateway agents
 tia-gateway --help
 ```
 
-Options:
+Start options:
 
 - `--config, -c <file>`: load JSON config file
 - `--agent <value>`: built-in ACP preset or raw ACP command
 - `--cwd <dir>`: working directory for the ACP agent process
 - `--show-thoughts`: forward ACP thinking messages back to the channel
-- `--login`: force WeChat re-login and replace the saved WeChat session
 - `--log-level <level>`: `debug | info | warn | error`
 - `--version, -v`: show version
+- `--help, -h`: show help
+
+Onboarding options:
+
+- `--config, -c <file>`: write or update a specific config file
 - `--help, -h`: show help
 
 Examples:
 
 ```bash
 npx tia-gateway
+npx tia-gateway onboard
+npx tia-gateway onboard --config ./tia-gateway.config.json
+npx tia-gateway start
 npx tia-gateway --agent codex
 npx tia-gateway --agent "npx @zed-industries/codex-acp"
 npx tia-gateway --config ./tia-gateway.config.json
@@ -164,6 +175,17 @@ Example:
       "appId": "${LARK_APP_ID}",
       "appSecret": "${LARK_APP_SECRET}",
       "groupRequireMention": true
+    },
+    {
+      "type": "telegram",
+      "id": "telegram-main",
+      "botToken": "${TELEGRAM_BOT_TOKEN}"
+    },
+    {
+      "type": "whatsapp",
+      "id": "whatsapp-main",
+      "authDirectoryPath": "~/.tia-gateway/channels/whatsapp-main",
+      "groupRequireMention": true
     }
   ]
 }
@@ -172,9 +194,20 @@ Example:
 Notes:
 
 - If `protocol.agent` is omitted, the gateway defaults to the `codex` preset.
-- If `channels` is omitted or empty, the gateway defaults to one `wechat` channel.
+- If you start the CLI with no configured channels, onboarding will guide you through creating them.
 - Strings support `${ENV_VAR}` expansion.
 - Relative paths are resolved from the config file directory.
+
+## Channel Onboarding
+
+`npx tia-gateway onboard` lets you revisit channel setup at any time.
+
+- `wechat`: saves the channel config, detects whether a WeChat session already exists, and lets you re-login from the onboarding flow if you want to replace it.
+- `whatsapp`: saves the channel config, detects existing WhatsApp auth files, and lets you re-link the device from onboarding.
+- `telegram`: asks for the bot token step by step.
+- `lark`: asks for the app ID and app secret step by step.
+
+For QR-based channels, onboarding shows the QR code directly in the terminal and waits for the login to complete before returning.
 
 You can also add or override ACP presets:
 
@@ -208,11 +241,8 @@ Today:
 
 - WeChat
 - Lark
-
-Coming very soon:
-
-- WhatsApp
 - Telegram
+- WhatsApp
 
 ### WeChat
 
@@ -237,6 +267,26 @@ The Lark connector:
 - receives messages over the Lark websocket SDK
 - sends outbound text replies
 - requires mention in group chats by default
+
+### Telegram
+
+The Telegram connector:
+
+- uses a standard bot token through `telegraf`
+- forwards private text messages into the shared gateway runtime
+- keeps Telegram group chats disabled for now, matching the current TIA Studio behavior
+- sends assistant replies back into the same DM
+
+### WhatsApp
+
+The WhatsApp connector:
+
+- uses WhatsApp Web through `@whiskeysockets/baileys`
+- prints the login QR code in the terminal when a session is not yet linked
+- can be re-linked later through `tia-gateway onboard`
+- stores auth state on disk under the configured channel directory
+- reconnects automatically when the socket drops
+- requires mentioning the bot in group chats by default, while still allowing direct chats normally
 
 Current behavior:
 

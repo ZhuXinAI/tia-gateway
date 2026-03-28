@@ -21,6 +21,7 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
   const tempDir = await mkdtemp(join(os.tmpdir(), 'tia-gateway-config-'))
   process.env.TEST_LARK_APP_ID = 'cli_app_id'
   process.env.TEST_LARK_APP_SECRET = 'cli_app_secret'
+  process.env.TEST_TELEGRAM_BOT_TOKEN = '123456:test-token'
 
   const configPath = join(tempDir, 'tia-gateway.config.json')
   await writeFile(
@@ -45,6 +46,17 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
             id: 'lark-main',
             appId: '${TEST_LARK_APP_ID}',
             appSecret: '${TEST_LARK_APP_SECRET}'
+          },
+          {
+            type: 'telegram',
+            id: 'telegram-main',
+            botToken: '${TEST_TELEGRAM_BOT_TOKEN}'
+          },
+          {
+            type: 'whatsapp',
+            id: 'whatsapp-main',
+            authDirectoryPath: './whatsapp-auth',
+            groupRequireMention: false
           }
         ]
       },
@@ -64,6 +76,11 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
   assert.equal(config.channels[1]?.type, 'lark')
   assert.equal(config.channels[1]?.appId, 'cli_app_id')
   assert.equal(config.channels[1]?.appSecret, 'cli_app_secret')
+  assert.equal(config.channels[2]?.type, 'telegram')
+  assert.equal(config.channels[2]?.botToken, '123456:test-token')
+  assert.equal(config.channels[3]?.type, 'whatsapp')
+  assert.equal(config.channels[3]?.authDirectoryPath, join(tempDir, 'whatsapp-auth'))
+  assert.equal(config.channels[3]?.groupRequireMention, false)
 
   await rm(tempDir, { recursive: true, force: true })
 })
