@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Add ACP agent selection to interactive onboarding, including built-in presets and custom ACP commands.
+- Align the package version metadata with the published release tag.
+
 ## 0.3.0
 
 - Store default gateway config centrally in `~/.tia-gateway/directories.json`, keyed by the launch directory, instead of auto-creating `tia-gateway.config.json` in each repo.

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   createSeedGatewayConfig,
+  listAvailableAgentPresets,
+  upsertAcpAgentSelection,
   upsertTelegramChannelConfig,
   upsertWhatsAppChannelConfig
 } from '../src/cli/config.js'
@@ -13,6 +15,86 @@ test('createSeedGatewayConfig provides a usable default config', () => {
   assert.equal(config.protocol?.type, 'acp')
   assert.equal(config.protocol?.agent?.preset, 'codex')
   assert.deepEqual(config.channels, [])
+})
+
+test('listAvailableAgentPresets includes built-in and saved custom presets', () => {
+  const presets = listAvailableAgentPresets({
+    protocol: {
+      type: 'acp',
+      agents: {
+        'my-agent': {
+          label: 'My Agent',
+          command: 'npx',
+          args: ['my-agent-cli', '--acp']
+        }
+      }
+    }
+  })
+
+  assert.equal(presets.some((preset) => preset.id === 'codex'), true)
+  assert.deepEqual(
+    presets.find((preset) => preset.id === 'my-agent'),
+    {
+      id: 'my-agent',
+      preset: {
+        label: 'My Agent',
+        command: 'npx',
+        args: ['my-agent-cli', '--acp']
+      },
+      source: 'custom'
+    }
+  )
+})
+
+test('upsertAcpAgentSelection stores preset choices and clears raw command fields', () => {
+  const updated = upsertAcpAgentSelection(
+    {
+      protocol: {
+        type: 'acp',
+        agent: {
+          command: 'npx',
+          args: ['legacy-agent', '--acp'],
+          cwd: './workspace',
+          showThoughts: true
+        }
+      }
+    },
+    {
+      mode: 'preset',
+      preset: 'claude'
+    }
+  )
+
+  assert.deepEqual(updated.protocol?.agent, {
+    preset: 'claude',
+    cwd: './workspace',
+    showThoughts: true
+  })
+})
+
+test('upsertAcpAgentSelection stores raw commands and clears preset fields', () => {
+  const updated = upsertAcpAgentSelection(
+    createSeedGatewayConfig({
+      protocol: {
+        type: 'acp',
+        agent: {
+          preset: 'codex',
+          showThoughts: false
+        }
+      }
+    }),
+    {
+      mode: 'raw',
+      command: 'npx',
+      args: ['my-agent', '--acp']
+    }
+  )
+
+  assert.deepEqual(updated.protocol?.agent, {
+    command: 'npx',
+    args: ['my-agent', '--acp'],
+    showThoughts: false
+  })
 })
 
 test('upsertTelegramChannelConfig updates an existing telegram channel', () => {

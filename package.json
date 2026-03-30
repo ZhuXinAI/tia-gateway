@@ -1,6 +1,6 @@
 {
   "name": "tia-gateway",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Channel-to-agent gateway with pluggable agent protocols and first-class ACP support.",
   "type": "module",
   "files": [

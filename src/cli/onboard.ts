@@ -17,11 +17,17 @@ import {
 } from '../config-store.js'
 import {
   createSeedGatewayConfig,
+  listAvailableAgentPresets,
+  upsertAcpAgentSelection,
   upsertLarkChannelConfig,
   upsertTelegramChannelConfig,
   upsertWhatsAppChannelConfig,
   upsertWechatChannelConfig
 } from './config.js'
+import {
+  DEFAULT_ACP_AGENT_PRESET,
+  parseAgentCommand
+} from '../protocols/acp/config.js'
 
 type OnboardChannelType = 'wechat' | 'whatsapp' | 'telegram' | 'lark'
 
@@ -166,6 +172,81 @@ async function selectChannelType(
     }
 
     console.log('Please choose 1, 2, 3, or 4.')
+  }
+}
+
+async function selectAgentConfig(
+  rl: QuestionInterface,
+  existingConfig: RawGatewayConfig | null
+): Promise<RawGatewayConfig> {
+  const presetOptions = listAvailableAgentPresets(existingConfig).map((option, index) => ({
+    ...option,
+    key: String(index + 1)
+  }))
+  const customOptionKey = String(presetOptions.length + 1)
+  const existingPreset = existingConfig?.protocol?.agent?.preset
+  const existingRawCommand = existingConfig?.protocol?.agent?.command
+  const existingRawArgs = existingConfig?.protocol?.agent?.args ?? []
+  const defaultSelectionKey = existingRawCommand
+    ? customOptionKey
+    : presetOptions.find((option) => option.id === existingPreset)?.key ??
+      presetOptions.find((option) => option.id === DEFAULT_ACP_AGENT_PRESET)?.key ??
+      presetOptions[0]?.key ??
+      '1'
+
+  console.log('\nAgent setup')
+  for (const option of presetOptions) {
+    const sourceLabel = option.source === 'custom' ? ' [custom preset]' : ''
+    const description = option.preset.description ? ` - ${option.preset.description}` : ''
+    console.log(`${option.key}) ${option.id} (${option.preset.label})${sourceLabel}${description}`)
+  }
+  console.log(`${customOptionKey}) Custom ACP command`)
+
+  while (true) {
+    const answer = (await rl.question(`Select agent [${defaultSelectionKey}]: `))
+      .trim()
+      .toLowerCase()
+    const normalizedSelection = answer || defaultSelectionKey
+
+    const selectedPreset =
+      presetOptions.find((option) => option.key === normalizedSelection) ??
+      presetOptions.find((option) => option.id === normalizedSelection)
+
+    if (selectedPreset) {
+      return upsertAcpAgentSelection(createSeedGatewayConfig(existingConfig), {
+        mode: 'preset',
+        preset: selectedPreset.id
+      })
+    }
+
+    if (normalizedSelection === customOptionKey || normalizedSelection === 'custom') {
+      const defaultCommand = [existingRawCommand, ...existingRawArgs].filter(Boolean).join(' ')
+
+      while (true) {
+        if (!defaultCommand) {
+          console.log('Enter a full ACP command, for example: npx my-agent --acp')
+        }
+
+        const commandInput = await askRequired(
+          rl,
+          'Custom ACP agent command',
+          defaultCommand
+        )
+
+        try {
+          const parsed = parseAgentCommand(commandInput)
+          return upsertAcpAgentSelection(createSeedGatewayConfig(existingConfig), {
+            mode: 'raw',
+            command: parsed.command,
+            args: parsed.args
+          })
+        } catch (error) {
+          console.log(error instanceof Error ? error.message : String(error))
+        }
+      }
+    }
+
+    console.log(`Please choose 1-${customOptionKey}, or enter a preset name.`)
   }
 }
 
@@ -481,19 +562,20 @@ export async function runOnboard(configPath?: string): Promise<void> {
     console.log(`Interactive onboarding for ${describeGatewayConfigSource(configSource)}`)
     console.log(`Default channel data lives under ${join(defaultStorageDir(), 'channels')}`)
 
-    const channelType = await selectChannelType(rl, existingConfig)
+    const configWithSelectedAgent = await selectAgentConfig(rl, existingConfig)
+    const channelType = await selectChannelType(rl, configWithSelectedAgent)
     switch (channelType) {
       case 'wechat':
-        await configureWechatChannel(rl, configSource, existingConfig)
+        await configureWechatChannel(rl, configSource, configWithSelectedAgent)
         break
       case 'whatsapp':
-        await configureWhatsAppChannel(rl, configSource, existingConfig)
+        await configureWhatsAppChannel(rl, configSource, configWithSelectedAgent)
         break
       case 'telegram':
-        await configureTelegramChannel(rl, configSource, existingConfig)
+        await configureTelegramChannel(rl, configSource, configWithSelectedAgent)
         break
       case 'lark':
-        await configureLarkChannel(rl, configSource, existingConfig)
+        await configureLarkChannel(rl, configSource, configWithSelectedAgent)
         break
     }
 

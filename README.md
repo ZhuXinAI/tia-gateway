@@ -45,10 +45,11 @@ npx tia-gateway
 and there is no configured channel yet, `tia-gateway` will:
 
 1. Launch interactive onboarding
-2. Ask which channel you want to configure
-3. Walk through credentials or QR login for that channel
-4. Save the config for the current directory in `~/.tia-gateway/directories.json`
-5. Start the gateway with the newly saved config
+2. Ask which ACP agent you want to use, or let you enter a custom ACP command
+3. Ask which channel you want to configure
+4. Walk through credentials or QR login for that channel
+5. Save the config for the current directory in `~/.tia-gateway/directories.json`
+6. Start the gateway with the newly saved config
 
 If the current directory already has a saved config, `npx tia-gateway` starts the gateway immediately.
 
@@ -214,6 +215,7 @@ Notes:
 
 `npx tia-gateway onboard` lets you revisit channel setup at any time.
 
+- onboarding now asks you which ACP agent to run before the channel-specific steps
 - `wechat`: saves the channel config, detects whether a WeChat session already exists, and lets you re-login from the onboarding flow if you want to replace it.
 - `whatsapp`: saves the channel config, detects existing WhatsApp auth files, and lets you re-link the device from onboarding.
 - `telegram`: asks for the bot token step by step.

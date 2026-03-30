@@ -5,7 +5,7 @@ import { createCliProgram } from '../src/cli/options.js'
 async function runCli(argv: string[]): Promise<Array<Record<string, unknown>>> {
   const calls: Array<Record<string, unknown>> = []
   const program = createCliProgram({
-    version: '0.2.0',
+    version: '0.4.0',
     onStart: (options) => {
       calls.push({ command: 'start', ...options })
     },
@@ -49,7 +49,7 @@ test('CLI parses onboard command options', async () => {
 
 test('CLI help keeps the -h flag on root and start commands', () => {
   const program = createCliProgram({
-    version: '0.2.0',
+    version: '0.4.0',
     onStart: () => undefined,
     onAgents: () => undefined,
     onOnboard: () => undefined
