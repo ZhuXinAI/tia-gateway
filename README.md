@@ -10,6 +10,16 @@ Connect IM channels with agent protocols through a unified gateway.
 
 The first version is intentionally bootstrap-focused: make it easy to start from `npx`, scan a QR code, connect a real agent, and grow into a broader multi-channel / multi-protocol gateway.
 
+## TL;DR
+
+If you want the shortest path, this is enough:
+
+```bash
+npx tia-gateway
+```
+
+On first run, `tia-gateway` will onboard interactively and save the config for the current directory under `~/.tia-gateway/directories.json`.
+
 ## Features
 
 - WeChat QR login with terminal QR rendering
@@ -37,10 +47,10 @@ and there is no configured channel yet, `tia-gateway` will:
 1. Launch interactive onboarding
 2. Ask which channel you want to configure
 3. Walk through credentials or QR login for that channel
-4. Save `tia-gateway.config.json`
+4. Save the config for the current directory in `~/.tia-gateway/directories.json`
 5. Start the gateway with the newly saved config
 
-If a config already exists, `npx tia-gateway` starts the gateway immediately.
+If the current directory already has a saved config, `npx tia-gateway` starts the gateway immediately.
 
 ## Requirements
 
@@ -116,7 +126,7 @@ tia-gateway --help
 
 Start options:
 
-- `--config, -c <file>`: load JSON config file
+- `--config, -c <file>`: load a specific JSON config file and remember it for this directory
 - `--agent <value>`: built-in ACP preset or raw ACP command
 - `--cwd <dir>`: working directory for the ACP agent process
 - `--show-thoughts`: forward ACP thinking messages back to the channel
@@ -126,7 +136,7 @@ Start options:
 
 Onboarding options:
 
-- `--config, -c <file>`: write or update a specific config file
+- `--config, -c <file>`: write or update a specific config file and remember it for this directory
 - `--help, -h`: show help
 
 Examples:
@@ -144,7 +154,9 @@ npx tia-gateway --config ./tia-gateway.config.json --agent claude --show-thought
 
 ## Configuration File
 
-You can provide a JSON config file with `--config`.
+By default, `tia-gateway` stores config in `~/.tia-gateway/directories.json`, keyed by the directory where you launched it.
+
+If you prefer a standalone JSON config file, you can provide one with `--config`. When you do, `tia-gateway` remembers that file path for the current directory so plain `npx tia-gateway` can find it again later.
 
 Example:
 
@@ -194,9 +206,9 @@ Example:
 Notes:
 
 - If `protocol.agent` is omitted, the gateway defaults to the `codex` preset.
-- If you start the CLI with no configured channels, onboarding will guide you through creating them.
+- If you start the CLI with no configured channels, onboarding will guide you through creating them and save the result for the current directory.
 - Strings support `${ENV_VAR}` expansion.
-- Relative paths are resolved from the config file directory.
+- Relative paths are resolved from the config file directory, or from the launch directory when using the default `~/.tia-gateway/directories.json` store.
 
 ## Channel Onboarding
 
@@ -309,6 +321,14 @@ By default, runtime files live under:
 ```text
 ~/.tia-gateway
 ```
+
+Gateway config is stored in:
+
+```text
+~/.tia-gateway/directories.json
+```
+
+Each entry is keyed by the directory where you ran `tia-gateway`.
 
 For WeChat channels, the channel state is typically stored under:
 

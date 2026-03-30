@@ -1,6 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
-import os from 'node:os'
 import type {
   RawChannelConfig,
   RawGatewayConfig,
@@ -10,52 +7,10 @@ import type {
   RawWechatChannelConfig
 } from '../config.js'
 
-export const DEFAULT_GATEWAY_CONFIG_FILE = 'tia-gateway.config.json'
-
 const DEFAULT_LOG_LEVEL = 'info'
-
-function resolveHomePath(value: string): string {
-  return value.startsWith('~/') ? join(os.homedir(), value.slice(2)) : value
-}
-
-export function resolveGatewayConfigPath(inputFilePath?: string): string {
-  const value = inputFilePath?.trim()
-  if (!value) {
-    return join(process.cwd(), DEFAULT_GATEWAY_CONFIG_FILE)
-  }
-
-  const expanded = resolveHomePath(value)
-  return isAbsolute(expanded) ? expanded : join(process.cwd(), expanded)
-}
-
-export async function readGatewayConfigFile(filePath: string): Promise<RawGatewayConfig | null> {
-  try {
-    const raw = await readFile(filePath, 'utf-8')
-    return JSON.parse(raw) as RawGatewayConfig
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return null
-    }
-
-    throw error
-  }
-}
-
-export async function writeGatewayConfigFile(
-  filePath: string,
-  config: RawGatewayConfig
-): Promise<void> {
-  await mkdir(dirname(filePath), { recursive: true })
-  await writeFile(filePath, JSON.stringify(config, null, 2), 'utf-8')
-}
 
 export function hasConfiguredChannels(config: RawGatewayConfig | null): boolean {
   return Array.isArray(config?.channels) && config.channels.length > 0
-}
-
-export function resolveConfigRelativePath(configPath: string, value: string): string {
-  const expanded = resolveHomePath(value)
-  return isAbsolute(expanded) ? expanded : join(dirname(configPath), expanded)
 }
 
 export function createSeedGatewayConfig(existingConfig: RawGatewayConfig | null): RawGatewayConfig {

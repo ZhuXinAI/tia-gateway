@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -107,4 +107,67 @@ test('loadGatewayConfig falls back to defaults when agent and channels are missi
   assert.match(config.warnings[0] ?? '', /Defaulting to "codex"/)
   assert.match(config.warnings[1] ?? '', /Defaulting to a single "wechat" channel/)
   await rm(tempDir, { recursive: true, force: true })
+})
+
+test('loadGatewayConfig reads the cwd entry from ~/.tia-gateway/directories.json by default', async () => {
+  const tempHome = await mkdtemp(join(os.tmpdir(), 'tia-gateway-home-'))
+  const projectDir = join(tempHome, 'project')
+  const registryPath = join(tempHome, '.tia-gateway', 'directories.json')
+  const previousHome = process.env.HOME
+  const previousCwd = process.cwd()
+
+  await mkdir(projectDir, { recursive: true })
+  await mkdir(join(tempHome, '.tia-gateway'), { recursive: true })
+  const directoryKey = await realpath(projectDir)
+  await writeFile(
+    registryPath,
+    JSON.stringify(
+      {
+        directories: {
+          [directoryKey]: {
+            config: {
+              protocol: {
+                type: 'acp',
+                agent: {
+                  preset: 'gemini'
+                }
+              },
+              channels: [
+                {
+                  type: 'telegram',
+                  botToken: 'inline-registry-token'
+                }
+              ]
+            }
+          }
+        }
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  )
+
+  process.env.HOME = tempHome
+  process.chdir(projectDir)
+
+  try {
+    const config = await loadGatewayConfig()
+
+    assert.equal(config.protocol.type, 'acp')
+    assert.equal(config.protocol.agent.id, 'gemini')
+    assert.equal(config.channels.length, 1)
+    assert.equal(config.channels[0]?.type, 'telegram')
+    assert.equal(config.channels[0]?.botToken, 'inline-registry-token')
+  } finally {
+    process.chdir(previousCwd)
+
+    if (previousHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = previousHome
+    }
+
+    await rm(tempHome, { recursive: true, force: true })
+  }
 })

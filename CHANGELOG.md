@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Store default gateway config centrally in `~/.tia-gateway/directories.json`, keyed by the launch directory, instead of auto-creating `tia-gateway.config.json` in each repo.
+- Keep `--config` file support while remembering the chosen config path per directory for future `npx tia-gateway` runs.
+- Add a TL;DR to the README so the zero-config `npx tia-gateway` path is visible immediately.
+
 ## 0.2.0
 
 - Add Telegram DM support through `telegraf`.

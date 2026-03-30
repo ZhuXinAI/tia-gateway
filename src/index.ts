@@ -10,7 +10,8 @@ export {
   resolveAcpAgentSelection,
   resolveAcpProtocolConfig
 } from './protocols/index.js'
-export { loadGatewayConfig, defaultStorageDir } from './config.js'
+export { defaultStorageDir } from './config-store.js'
+export { loadGatewayConfig } from './config.js'
 export type {
   AgentProtocolAdapter,
   AgentProtocolTurnCallbacks,

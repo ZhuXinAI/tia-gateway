@@ -6,16 +6,21 @@ import qrcodeTerminal from 'qrcode-terminal'
 import { WhatsAppChannel } from '../channels/whatsapp-channel.js'
 import { WechatChannel } from '../channels/wechat-channel.js'
 import { createLogger } from '../logging.js'
-import { defaultStorageDir, type RawGatewayConfig } from '../config.js'
+import type { RawGatewayConfig } from '../config.js'
+import {
+  defaultStorageDir,
+  describeGatewayConfigSource,
+  readGatewayConfigSource,
+  resolveConfigValuePath,
+  type GatewayConfigSource,
+  writeGatewayConfigSource
+} from '../config-store.js'
 import {
   createSeedGatewayConfig,
-  readGatewayConfigFile,
-  resolveConfigRelativePath,
   upsertLarkChannelConfig,
   upsertTelegramChannelConfig,
   upsertWhatsAppChannelConfig,
-  upsertWechatChannelConfig,
-  writeGatewayConfigFile
+  upsertWechatChannelConfig
 } from './config.js'
 
 type OnboardChannelType = 'wechat' | 'whatsapp' | 'telegram' | 'lark'
@@ -164,8 +169,8 @@ async function selectChannelType(
   }
 }
 
-async function printSavedConfigMessage(configPath: string): Promise<void> {
-  console.log(`\nSaved config to ${configPath}`)
+async function printSavedConfigMessage(source: GatewayConfigSource): Promise<void> {
+  console.log(`\nSaved config to ${describeGatewayConfigSource(source)}`)
 }
 
 async function waitForWechatConnection(input: {
@@ -300,7 +305,7 @@ async function waitForWhatsAppConnection(input: {
 
 async function configureWechatChannel(
   rl: QuestionInterface,
-  configPath: string,
+  configSource: GatewayConfigSource,
   existingConfig: RawGatewayConfig | null
 ): Promise<RawGatewayConfig> {
   const existingChannel = findChannelByType(existingConfig, 'wechat')
@@ -319,10 +324,13 @@ async function configureWechatChannel(
     reconnectDelayMs: existingChannel?.reconnectDelayMs
   })
 
-  await writeGatewayConfigFile(configPath, nextConfig)
-  await printSavedConfigMessage(configPath)
+  const savedConfigSource = await writeGatewayConfigSource(configSource, nextConfig)
+  await printSavedConfigMessage(savedConfigSource)
 
-  const absoluteDataDirectoryPath = resolveConfigRelativePath(configPath, dataDirectoryPath)
+  const absoluteDataDirectoryPath = resolveConfigValuePath(
+    savedConfigSource.configBaseDir,
+    dataDirectoryPath
+  )
   const hasSession = await pathExists(join(absoluteDataDirectoryPath, 'account.json'))
 
   if (hasSession) {
@@ -348,7 +356,7 @@ async function configureWechatChannel(
 
 async function configureWhatsAppChannel(
   rl: QuestionInterface,
-  configPath: string,
+  configSource: GatewayConfigSource,
   existingConfig: RawGatewayConfig | null
 ): Promise<RawGatewayConfig> {
   const existingChannel = findChannelByType(existingConfig, 'whatsapp')
@@ -370,10 +378,13 @@ async function configureWhatsAppChannel(
     reconnectDelayMs: existingChannel?.reconnectDelayMs
   })
 
-  await writeGatewayConfigFile(configPath, nextConfig)
-  await printSavedConfigMessage(configPath)
+  const savedConfigSource = await writeGatewayConfigSource(configSource, nextConfig)
+  await printSavedConfigMessage(savedConfigSource)
 
-  const absoluteAuthDirectoryPath = resolveConfigRelativePath(configPath, authDirectoryPath)
+  const absoluteAuthDirectoryPath = resolveConfigValuePath(
+    savedConfigSource.configBaseDir,
+    authDirectoryPath
+  )
   const hasSession = await pathExists(join(absoluteAuthDirectoryPath, 'creds.json'))
 
   if (hasSession) {
@@ -399,7 +410,7 @@ async function configureWhatsAppChannel(
 
 async function configureTelegramChannel(
   rl: QuestionInterface,
-  configPath: string,
+  configSource: GatewayConfigSource,
   existingConfig: RawGatewayConfig | null
 ): Promise<RawGatewayConfig> {
   const existingChannel = findChannelByType(existingConfig, 'telegram')
@@ -417,14 +428,14 @@ async function configureTelegramChannel(
     botToken
   })
 
-  await writeGatewayConfigFile(configPath, nextConfig)
-  await printSavedConfigMessage(configPath)
+  const savedConfigSource = await writeGatewayConfigSource(configSource, nextConfig)
+  await printSavedConfigMessage(savedConfigSource)
   return nextConfig
 }
 
 async function configureLarkChannel(
   rl: QuestionInterface,
-  configPath: string,
+  configSource: GatewayConfigSource,
   existingConfig: RawGatewayConfig | null
 ): Promise<RawGatewayConfig> {
   const existingChannel = findChannelByType(existingConfig, 'lark')
@@ -454,34 +465,35 @@ async function configureLarkChannel(
     groupRequireMention
   })
 
-  await writeGatewayConfigFile(configPath, nextConfig)
-  await printSavedConfigMessage(configPath)
+  const savedConfigSource = await writeGatewayConfigSource(configSource, nextConfig)
+  await printSavedConfigMessage(savedConfigSource)
   return nextConfig
 }
 
-export async function runOnboard(configPath: string): Promise<void> {
+export async function runOnboard(configPath?: string): Promise<void> {
   ensureInteractiveTerminal()
 
-  const existingConfig = await readGatewayConfigFile(configPath)
+  const configSource = await readGatewayConfigSource({ filePath: configPath })
+  const existingConfig = configSource.config
   const rl = createInterface({ input, output })
 
   try {
-    console.log(`Interactive onboarding for ${configPath}`)
+    console.log(`Interactive onboarding for ${describeGatewayConfigSource(configSource)}`)
     console.log(`Default channel data lives under ${join(defaultStorageDir(), 'channels')}`)
 
     const channelType = await selectChannelType(rl, existingConfig)
     switch (channelType) {
       case 'wechat':
-        await configureWechatChannel(rl, configPath, existingConfig)
+        await configureWechatChannel(rl, configSource, existingConfig)
         break
       case 'whatsapp':
-        await configureWhatsAppChannel(rl, configPath, existingConfig)
+        await configureWhatsAppChannel(rl, configSource, existingConfig)
         break
       case 'telegram':
-        await configureTelegramChannel(rl, configPath, existingConfig)
+        await configureTelegramChannel(rl, configSource, existingConfig)
         break
       case 'lark':
-        await configureLarkChannel(rl, configPath, existingConfig)
+        await configureLarkChannel(rl, configSource, existingConfig)
         break
     }
 

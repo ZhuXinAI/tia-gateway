@@ -1,7 +1,7 @@
-import { access, readFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import os from 'node:os'
 import type { LogLevel } from './logging.js'
+import { defaultStorageDir, readGatewayConfigSource } from './config-store.js'
 import {
   DEFAULT_ACP_AGENT_PRESET,
   resolveAcpProtocolConfig,
@@ -121,7 +121,6 @@ export interface LoadGatewayConfigOptions {
   logLevel?: LogLevel
 }
 
-const DEFAULT_CONFIG_FILE = 'tia-gateway.config.json'
 const DEFAULT_IDLE_TIMEOUT_MS = 24 * 60 * 60_000
 const DEFAULT_MAX_CONCURRENT_SESSIONS = 10
 const DEFAULT_WECHAT_CHANNEL_ID = 'wechat-main'
@@ -158,19 +157,13 @@ function resolvePath(baseDir: string, value: string): string {
   return isAbsolute(value) ? value : join(baseDir, value)
 }
 
-export function defaultStorageDir(): string {
-  return join(os.homedir(), '.tia-gateway')
-}
-
 export async function loadGatewayConfig(
   options: LoadGatewayConfigOptions = {}
 ): Promise<ResolvedGatewayConfig> {
   const warnings: string[] = []
-  const configFilePath = await findConfigFile(options.filePath)
-  const configBaseDir = configFilePath ? dirname(configFilePath) : process.cwd()
-  const rawConfig = configFilePath
-    ? expandEnvValues(JSON.parse(await readFile(configFilePath, 'utf-8')) as RawGatewayConfig)
-    : ({} as RawGatewayConfig)
+  const configSource = await readGatewayConfigSource({ filePath: options.filePath })
+  const configBaseDir = configSource.configBaseDir
+  const rawConfig = expandEnvValues(configSource.config ?? ({} as RawGatewayConfig))
 
   const protocolType = rawConfig.protocol?.type ?? 'acp'
   if (protocolType !== 'acp') {
@@ -226,20 +219,6 @@ export async function loadGatewayConfig(
     protocol,
     channels,
     warnings
-  }
-}
-
-async function findConfigFile(inputFilePath?: string): Promise<string | undefined> {
-  if (inputFilePath) {
-    return resolvePath(process.cwd(), inputFilePath)
-  }
-
-  const candidate = join(process.cwd(), DEFAULT_CONFIG_FILE)
-  try {
-    await access(candidate)
-    return candidate
-  } catch {
-    return undefined
   }
 }
 

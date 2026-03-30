@@ -5,9 +5,12 @@ import qrcodeTerminal from 'qrcode-terminal'
 import { createChannels } from '../channels/index.js'
 import { loadGatewayConfig } from '../config.js'
 import {
-  hasConfiguredChannels,
-  readGatewayConfigFile,
-  resolveGatewayConfigPath
+  describeGatewayConfigSource,
+  readGatewayConfigSource,
+  rememberGatewayConfigPath
+} from '../config-store.js'
+import {
+  hasConfiguredChannels
 } from '../cli/config.js'
 import { runOnboard } from '../cli/onboard.js'
 import { createCliProgram, type StartCommandOptions } from '../cli/options.js'
@@ -24,20 +27,26 @@ function printAgents(): void {
 }
 
 async function startGatewayCommand(options: StartCommandOptions): Promise<void> {
-  const configPath = resolveGatewayConfigPath(options.config)
-  const existingConfig = await readGatewayConfigFile(configPath)
+  const configSource = await readGatewayConfigSource({ filePath: options.config })
+  const existingConfig = configSource.config
   if (!hasConfiguredChannels(existingConfig)) {
-    console.log(`No configured channels found at ${configPath}. Starting interactive onboarding.`)
-    await runOnboard(configPath)
+    console.log(
+      `No configured channels found at ${describeGatewayConfigSource(configSource)}. Starting interactive onboarding.`
+    )
+    await runOnboard(options.config)
   }
 
   const config = await loadGatewayConfig({
-    filePath: configPath,
+    filePath: options.config,
     agentSelection: options.agent,
     cwd: options.cwd,
     showThoughts: options.showThoughts,
     logLevel: options.logLevel
   })
+
+  if (options.config) {
+    await rememberGatewayConfigPath(options.config)
+  }
 
   const logger = createLogger(config.gateway.logLevel, PACKAGE_NAME)
   for (const warning of config.warnings) {
@@ -103,8 +112,7 @@ async function main(): Promise<void> {
       printAgents()
     },
     onOnboard: async (options) => {
-      const configPath = resolveGatewayConfigPath(options.config)
-      await runOnboard(configPath)
+      await runOnboard(options.config)
     }
   })
 
