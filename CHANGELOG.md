@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Trigger interactive onboarding when ACP agent selection is missing, so `npx tia-gateway` prompts users to choose an agent (for example `codex` or `claude`) instead of silently defaulting.
+- Clarify first-run docs that startup onboarding requires both channel setup and ACP agent selection.
+
 ## 0.4.0
 
 - Add ACP agent selection to interactive onboarding, including built-in presets and custom ACP commands.

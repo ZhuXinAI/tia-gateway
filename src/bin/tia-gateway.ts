@@ -10,6 +10,7 @@ import {
   rememberGatewayConfigPath
 } from '../config-store.js'
 import {
+  hasConfiguredAcpAgent,
   hasConfiguredChannels
 } from '../cli/config.js'
 import { runOnboard } from '../cli/onboard.js'
@@ -29,9 +30,19 @@ function printAgents(): void {
 async function startGatewayCommand(options: StartCommandOptions): Promise<void> {
   const configSource = await readGatewayConfigSource({ filePath: options.config })
   const existingConfig = configSource.config
-  if (!hasConfiguredChannels(existingConfig)) {
+  const isMissingChannels = !hasConfiguredChannels(existingConfig)
+  const isMissingAgent = !hasConfiguredAcpAgent(existingConfig)
+  if (isMissingChannels || isMissingAgent) {
+    const missingPieces: string[] = []
+    if (isMissingChannels) {
+      missingPieces.push('configured channels')
+    }
+    if (isMissingAgent) {
+      missingPieces.push('ACP agent selection')
+    }
+
     console.log(
-      `No configured channels found at ${describeGatewayConfigSource(configSource)}. Starting interactive onboarding.`
+      `Missing ${missingPieces.join(' and ')} at ${describeGatewayConfigSource(configSource)}. Starting interactive onboarding.`
     )
     await runOnboard(options.config)
   }

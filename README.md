@@ -42,7 +42,7 @@ If you just run:
 npx tia-gateway
 ```
 
-and there is no configured channel yet, `tia-gateway` will:
+and there is no configured channel or no ACP agent selected yet, `tia-gateway` will:
 
 1. Launch interactive onboarding
 2. Ask which ACP agent you want to use, or let you enter a custom ACP command
@@ -51,7 +51,7 @@ and there is no configured channel yet, `tia-gateway` will:
 5. Save the config for the current directory in `~/.tia-gateway/directories.json`
 6. Start the gateway with the newly saved config
 
-If the current directory already has a saved config, `npx tia-gateway` starts the gateway immediately.
+If the current directory already has a saved config with channels and an ACP agent selection, `npx tia-gateway` starts the gateway immediately.
 
 ## Requirements
 

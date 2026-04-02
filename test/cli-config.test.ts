@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   createSeedGatewayConfig,
+  hasConfiguredAcpAgent,
   listAvailableAgentPresets,
   upsertAcpAgentSelection,
   upsertTelegramChannelConfig,
@@ -15,6 +16,57 @@ test('createSeedGatewayConfig provides a usable default config', () => {
   assert.equal(config.protocol?.type, 'acp')
   assert.equal(config.protocol?.agent?.preset, 'codex')
   assert.deepEqual(config.channels, [])
+})
+
+test('hasConfiguredAcpAgent returns true for preset or raw command', () => {
+  assert.equal(
+    hasConfiguredAcpAgent({
+      protocol: {
+        type: 'acp',
+        agent: {
+          preset: 'codex'
+        }
+      }
+    }),
+    true
+  )
+
+  assert.equal(
+    hasConfiguredAcpAgent({
+      protocol: {
+        type: 'acp',
+        agent: {
+          command: 'npx',
+          args: ['my-agent', '--acp']
+        }
+      }
+    }),
+    true
+  )
+})
+
+test('hasConfiguredAcpAgent returns false when no usable agent selection is present', () => {
+  assert.equal(hasConfiguredAcpAgent(null), false)
+  assert.equal(
+    hasConfiguredAcpAgent({
+      protocol: {
+        type: 'acp',
+        agent: {}
+      }
+    }),
+    false
+  )
+  assert.equal(
+    hasConfiguredAcpAgent({
+      protocol: {
+        type: 'acp',
+        agent: {
+          preset: '   '
+        }
+      }
+    }),
+    false
+  )
 })
 
 test('listAvailableAgentPresets includes built-in and saved custom presets', () => {

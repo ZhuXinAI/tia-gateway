@@ -25,6 +25,19 @@ export function hasConfiguredChannels(config: RawGatewayConfig | null): boolean 
   return Array.isArray(config?.channels) && config.channels.length > 0
 }
 
+export function hasConfiguredAcpAgent(config: RawGatewayConfig | null): boolean {
+  const agent = config?.protocol?.agent
+  if (!agent) {
+    return false
+  }
+
+  if (typeof agent.preset === 'string' && agent.preset.trim().length > 0) {
+    return true
+  }
+
+  return typeof agent.command === 'string' && agent.command.trim().length > 0
+}
+
 export function createSeedGatewayConfig(existingConfig: RawGatewayConfig | null): RawGatewayConfig {
   return {
     gateway: existingConfig?.gateway ?? {
