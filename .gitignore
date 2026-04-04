@@ -13,3 +13,4 @@ yarn-debug.log*
 pnpm-debug.log*
 *.tgz
 tia-gateway.config.json
+src/web/app.js

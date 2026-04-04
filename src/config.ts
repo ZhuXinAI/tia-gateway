@@ -43,11 +43,35 @@ export interface RawWhatsAppChannelConfig {
   reconnectDelayMs?: number
 }
 
+export interface RawHttpChannelConfig {
+  id?: string
+  type: 'http'
+  host?: string
+  port: number
+  chatPath?: string
+  ssePath?: string
+  token?: string
+  serveWebApp?: boolean
+  autoGenerateToken?: boolean
+  title?: string
+}
+
+export interface RawWebSocketChannelConfig {
+  id?: string
+  type: 'websocket'
+  host?: string
+  port: number
+  path?: string
+  token?: string
+}
+
 export type RawChannelConfig =
   | RawWechatChannelConfig
   | RawLarkChannelConfig
   | RawTelegramChannelConfig
   | RawWhatsAppChannelConfig
+  | RawHttpChannelConfig
+  | RawWebSocketChannelConfig
 
 export interface RawGatewayConfig {
   gateway?: {
@@ -95,11 +119,35 @@ export interface ResolvedWhatsAppChannelConfig {
   reconnectDelayMs?: number
 }
 
+export interface ResolvedHttpChannelConfig {
+  id: string
+  type: 'http'
+  host: string
+  port: number
+  chatPath: string
+  ssePath: string
+  token?: string
+  serveWebApp: boolean
+  autoGenerateToken: boolean
+  title: string
+}
+
+export interface ResolvedWebSocketChannelConfig {
+  id: string
+  type: 'websocket'
+  host: string
+  port: number
+  path: string
+  token?: string
+}
+
 export type ResolvedChannelConfig =
   | ResolvedWechatChannelConfig
   | ResolvedLarkChannelConfig
   | ResolvedTelegramChannelConfig
   | ResolvedWhatsAppChannelConfig
+  | ResolvedHttpChannelConfig
+  | ResolvedWebSocketChannelConfig
 
 export interface ResolvedGatewayConfig {
   gateway: {
@@ -117,6 +165,7 @@ export interface LoadGatewayConfigOptions {
   agentSelection?: string
   cwd?: string
   showThoughts?: boolean
+  showTools?: boolean
   forceLogin?: boolean
   logLevel?: LogLevel
 }
@@ -124,6 +173,11 @@ export interface LoadGatewayConfigOptions {
 const DEFAULT_IDLE_TIMEOUT_MS = 24 * 60 * 60_000
 const DEFAULT_MAX_CONCURRENT_SESSIONS = 10
 const DEFAULT_WECHAT_CHANNEL_ID = 'wechat-main'
+const DEFAULT_HTTP_HOST = '127.0.0.1'
+const DEFAULT_HTTP_CHAT_PATH = '/chat'
+const DEFAULT_HTTP_SSE_PATH = '/sse'
+const DEFAULT_HTTP_TITLE = 'TIA Gateway'
+const DEFAULT_WEBSOCKET_PATH = '/ws'
 
 function expandEnvString(value: string): string {
   return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_, name: string) => process.env[name] ?? '')
@@ -155,6 +209,18 @@ function resolvePath(baseDir: string, value: string): string {
   }
 
   return isAbsolute(value) ? value : join(baseDir, value)
+}
+
+function normalizeHttpPath(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === '/') {
+    return '/'
+  }
+
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return withLeadingSlash.length > 1 && withLeadingSlash.endsWith('/')
+    ? withLeadingSlash.slice(0, -1)
+    : withLeadingSlash
 }
 
 export async function loadGatewayConfig(
@@ -195,7 +261,8 @@ export async function loadGatewayConfig(
     raw: normalizedRawProtocol,
     agentSelection: options.agentSelection,
     cwd: options.cwd ? resolvePath(configBaseDir, options.cwd) : undefined,
-    showThoughts: options.showThoughts
+    showThoughts: options.showThoughts,
+    showTools: options.showTools
   })
 
   if ((rawConfig.channels?.length ?? 0) === 0) {
@@ -290,6 +357,30 @@ function resolveChannels(
           forceLogin: input.forceLogin || channel.forceLogin || false,
           groupRequireMention: channel.groupRequireMention ?? true,
           reconnectDelayMs: channel.reconnectDelayMs
+        }
+
+      case 'http':
+        return {
+          id: channel.id ?? `http-${index + 1}`,
+          type: 'http',
+          host: channel.host?.trim() || DEFAULT_HTTP_HOST,
+          port: channel.port,
+          chatPath: normalizeHttpPath(channel.chatPath ?? DEFAULT_HTTP_CHAT_PATH),
+          ssePath: normalizeHttpPath(channel.ssePath ?? DEFAULT_HTTP_SSE_PATH),
+          token: channel.token?.trim() || undefined,
+          serveWebApp: channel.serveWebApp ?? false,
+          autoGenerateToken: channel.autoGenerateToken ?? false,
+          title: channel.title?.trim() || DEFAULT_HTTP_TITLE
+        }
+
+      case 'websocket':
+        return {
+          id: channel.id ?? `websocket-${index + 1}`,
+          type: 'websocket',
+          host: channel.host?.trim() || DEFAULT_HTTP_HOST,
+          port: channel.port,
+          path: normalizeHttpPath(channel.path ?? DEFAULT_WEBSOCKET_PATH),
+          token: channel.token?.trim() || undefined
         }
     }
   })

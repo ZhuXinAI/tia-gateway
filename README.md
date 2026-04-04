@@ -26,6 +26,8 @@ On first run, `tia-gateway` will onboard interactively and save the config for t
 - Lark connector with websocket receive flow
 - Telegram bot connector for DM conversations
 - WhatsApp Web connector with terminal QR login and reconnect handling
+- HTTP chat channel with AI SDK-compatible SSE responses and resumable streams
+- WebSocket chat channel with structured event forwarding
 - Protocol abstraction layer so ACP is not hard-wired into the core
 - ACP adapter built on [`@agentclientprotocol/sdk`](https://www.npmjs.com/package/@agentclientprotocol/sdk)
 - One agent session per channel conversation
@@ -60,6 +62,7 @@ If the current directory already has a saved config with channels and an ACP age
 - Lark app credentials if you enable the Lark channel
 - A Telegram bot token if you enable the Telegram channel
 - A phone that can link WhatsApp Web if you enable the WhatsApp channel
+- A free local port if you enable the HTTP or WebSocket channels
 - An ACP-compatible agent available locally or through `npx`
 
 ## Quick Start
@@ -131,6 +134,7 @@ Start options:
 - `--agent <value>`: built-in ACP preset or raw ACP command
 - `--cwd <dir>`: working directory for the ACP agent process
 - `--show-thoughts`: forward ACP thinking messages back to the channel
+- `--show-tools`: forward ACP tool progress messages back to the channel
 - `--log-level <level>`: `debug | info | warn | error`
 - `--version, -v`: show version
 - `--help, -h`: show help
@@ -150,7 +154,7 @@ npx tia-gateway start
 npx tia-gateway --agent codex
 npx tia-gateway --agent "npx @zed-industries/codex-acp"
 npx tia-gateway --config ./tia-gateway.config.json
-npx tia-gateway --config ./tia-gateway.config.json --agent claude --show-thoughts
+npx tia-gateway --config ./tia-gateway.config.json --agent claude --show-thoughts --show-tools
 ```
 
 ## Configuration File
@@ -173,7 +177,8 @@ Example:
     "agent": {
       "preset": "codex",
       "cwd": "./workspace",
-      "showThoughts": false
+      "showThoughts": false,
+      "showTools": false
     }
   },
   "channels": [
@@ -199,6 +204,24 @@ Example:
       "id": "whatsapp-main",
       "authDirectoryPath": "~/.tia-gateway/channels/whatsapp-main",
       "groupRequireMention": true
+    },
+    {
+      "type": "http",
+      "id": "http-main",
+      "host": "127.0.0.1",
+      "port": 4311,
+      "chatPath": "/chat",
+      "ssePath": "/sse",
+      "serveWebApp": true,
+      "autoGenerateToken": true,
+      "title": "TIA Gateway"
+    },
+    {
+      "type": "websocket",
+      "id": "websocket-main",
+      "host": "127.0.0.1",
+      "port": 4312,
+      "path": "/ws"
     }
   ]
 }
@@ -215,11 +238,15 @@ Notes:
 
 `npx tia-gateway onboard` lets you revisit channel setup at any time.
 
+When you run the standalone `onboard` command, it saves config and exits. Start the runtime afterward with `npx tia-gateway` to make HTTP or WebSocket endpoints reachable.
+
 - onboarding now asks you which ACP agent to run before the channel-specific steps
 - `wechat`: saves the channel config, detects whether a WeChat session already exists, and lets you re-login from the onboarding flow if you want to replace it.
 - `whatsapp`: saves the channel config, detects existing WhatsApp auth files, and lets you re-link the device from onboarding.
 - `telegram`: asks for the bot token step by step.
 - `lark`: asks for the app ID and app secret step by step.
+- `http`: asks for host, port, paths, web UI, and token settings step by step.
+- `websocket`: asks for host, port, path, and optional token settings step by step.
 
 For QR-based channels, onboarding shows the QR code directly in the terminal and waits for the login to complete before returning.
 
@@ -257,6 +284,8 @@ Today:
 - Lark
 - Telegram
 - WhatsApp
+- HTTP
+- WebSocket
 
 ### WeChat
 
@@ -307,14 +336,47 @@ Current behavior:
 - text messages only
 - group chats are ignored unless the bot is mentioned
 
+### HTTP
+
+The HTTP connector:
+
+- listens on the configured `host` and `port`
+- can optionally serve a built-in browser chat shell at `GET /`
+- accepts `POST <chatPath>` requests with either a simple `{ id, message }` body or AI SDK-style `{ id, messages }`
+- streams responses back as AI SDK UI-message SSE with `x-vercel-ai-ui-message-stream: v1`
+- supports resumable streams at both `<chatPath>/:id/stream` and `<ssePath>/:id`
+- uses `resumable-stream` with an in-memory publisher/subscriber bus
+- can protect both POST and resume routes with an optional static `token`
+- can auto-generate and persist an HTTP token under `~/.tia-gateway/channels/<channel-id>/http-token.json`
+
+This makes it straightforward to point an AI SDK frontend at the gateway by setting the transport `api` to the configured `<chatPath>`.
+
+### WebSocket
+
+The WebSocket connector:
+
+- listens on the configured `host` and `port`
+- accepts websocket upgrades on the configured `path`
+- binds each socket to a chat via `?chatId=...` or generates one automatically
+- forwards inbound `{ "type": "message", "text": "..." }` payloads into the shared gateway runtime
+- pushes structured events like `typing`, `text-delta`, `reasoning-delta`, `protocol-event`, and final `message` responses back to connected clients
+- can protect connections with an optional static `token`
+
 ## Runtime Behavior
 
-- Each channel conversation gets a dedicated ACP session and subprocess.
+- Each channel conversation stays bound to one ACP session unless `/new` is used.
+- Session bindings are persisted on disk and restored after gateway restart when the agent supports `session/load`.
 - Messages are processed serially per conversation.
 - Built-in ACP presets are started through `npx -y`.
 - ACP thought chunks can optionally be forwarded back to the user with `--show-thoughts`.
+- ACP tool progress can optionally be forwarded back to the user with `--show-tools`.
 - ACP permission requests are auto-approved today.
 - Idle session cleanup is controlled by `gateway.idleTimeoutMs`.
+- HTTP streams can be resumed while a turn is still active via the configured SSE endpoints.
+- Slash commands supported by the gateway:
+  - `/new`: clear the chat's current ACP binding and start fresh on next message
+  - `/list`: list attachable ACP sessions from the current agent
+  - `/attach <sessionId>`: bind this chat to an existing ACP session
 
 ## Storage
 
@@ -331,6 +393,12 @@ Gateway config is stored in:
 ```
 
 Each entry is keyed by the directory where you ran `tia-gateway`.
+
+ACP chat-to-session bindings are stored in:
+
+```text
+~/.tia-gateway/acp-session-bindings.json
+```
 
 For WeChat channels, the channel state is typically stored under:
 

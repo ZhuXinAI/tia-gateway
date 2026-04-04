@@ -4,7 +4,7 @@ import { stdin as input, stdout as output } from 'node:process'
 import { join } from 'node:path'
 import qrcodeTerminal from 'qrcode-terminal'
 import { WhatsAppChannel } from '../channels/whatsapp-channel.js'
-import { WechatChannel } from '../channels/wechat-channel.js'
+import { WechatChannel } from '../channels/wechat-channel/index.js'
 import { createLogger } from '../logging.js'
 import type { RawGatewayConfig } from '../config.js'
 import {
@@ -19,8 +19,10 @@ import {
   createSeedGatewayConfig,
   listAvailableAgentPresets,
   upsertAcpAgentSelection,
+  upsertHttpChannelConfig,
   upsertLarkChannelConfig,
   upsertTelegramChannelConfig,
+  upsertWebSocketChannelConfig,
   upsertWhatsAppChannelConfig,
   upsertWechatChannelConfig
 } from './config.js'
@@ -29,7 +31,23 @@ import {
   parseAgentCommand
 } from '../protocols/acp/config.js'
 
-type OnboardChannelType = 'wechat' | 'whatsapp' | 'telegram' | 'lark'
+export type OnboardChannelType =
+  | 'wechat'
+  | 'whatsapp'
+  | 'telegram'
+  | 'lark'
+  | 'http'
+  | 'websocket'
+
+export type OnboardChannelOption = {
+  key: string
+  type: OnboardChannelType
+  label: string
+}
+
+export type RunOnboardOptions = {
+  willStartGatewayAfterCompletion?: boolean
+}
 
 type QuestionInterface = Pick<ReturnType<typeof createInterface>, 'question' | 'close'>
 
@@ -49,8 +67,18 @@ const DEFAULT_CHANNEL_IDS: Record<OnboardChannelType, string> = {
   wechat: 'wechat-main',
   whatsapp: 'whatsapp-main',
   telegram: 'telegram-main',
-  lark: 'lark-main'
+  lark: 'lark-main',
+  http: 'http-main',
+  websocket: 'websocket-main'
 }
+
+const DEFAULT_HTTP_HOST = '127.0.0.1'
+const DEFAULT_HTTP_PORT = 4311
+const DEFAULT_HTTP_CHAT_PATH = '/chat'
+const DEFAULT_HTTP_SSE_PATH = '/sse'
+const DEFAULT_HTTP_TITLE = 'TIA Gateway'
+const DEFAULT_WEBSOCKET_PORT = 4312
+const DEFAULT_WEBSOCKET_PATH = '/ws'
 
 function defaultChannelStoragePath(channelId: string): string {
   return `~/.tia-gateway/channels/${channelId}`
@@ -117,6 +145,125 @@ async function askYesNo(
   }
 }
 
+async function askPort(
+  rl: QuestionInterface,
+  prompt: string,
+  defaultValue: number
+): Promise<number> {
+  while (true) {
+    const answer = await askRequired(rl, prompt, String(defaultValue))
+    const port = Number.parseInt(answer, 10)
+    if (Number.isInteger(port) && port >= 1 && port <= 65_535) {
+      return port
+    }
+
+    console.log('Please enter a valid TCP port between 1 and 65535.')
+  }
+}
+
+function normalizeHttpPath(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === '/') {
+    return '/'
+  }
+
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return withLeadingSlash.length > 1 && withLeadingSlash.endsWith('/')
+    ? withLeadingSlash.slice(0, -1)
+    : withLeadingSlash
+}
+
+function formatDisplayUrl(
+  protocol: 'http' | 'ws',
+  host: string,
+  port: number,
+  pathname: string
+): string {
+  const rawHost =
+    host === '0.0.0.0'
+      ? '127.0.0.1'
+      : host === '::'
+        ? '::1'
+        : host
+  const displayHost =
+    rawHost.includes(':') && !rawHost.startsWith('[') ? `[${rawHost}]` : rawHost
+
+  return `${protocol}://${displayHost}:${port}${pathname}`
+}
+
+export function listOnboardChannelOptions(existingConfig: RawGatewayConfig | null): {
+  defaultSelection: OnboardChannelType
+  options: OnboardChannelOption[]
+} {
+  const existingType = existingConfig?.channels?.[0]?.type
+  const defaultSelection: OnboardChannelType =
+    existingType === 'wechat' ||
+    existingType === 'whatsapp' ||
+    existingType === 'telegram' ||
+    existingType === 'lark' ||
+    existingType === 'http' ||
+    existingType === 'websocket'
+      ? existingType
+      : 'wechat'
+
+  return {
+    defaultSelection,
+    options: [
+      { key: '1', type: 'wechat', label: 'WeChat' },
+      { key: '2', type: 'whatsapp', label: 'WhatsApp' },
+      { key: '3', type: 'telegram', label: 'Telegram' },
+      { key: '4', type: 'lark', label: 'Lark' },
+      { key: '5', type: 'http', label: 'HTTP' },
+      { key: '6', type: 'websocket', label: 'WebSocket' }
+    ]
+  }
+}
+
+export function buildOnboardCompletionMessages(input: {
+  config: RawGatewayConfig | null
+  channelType: OnboardChannelType
+  willStartGatewayAfterCompletion?: boolean
+}): string[] {
+  if (input.willStartGatewayAfterCompletion) {
+    return ['Onboarding complete. Starting gateway...']
+  }
+
+  const messages = [
+    'Onboarding complete.',
+    'Start the gateway with "npx tia-gateway" to make this channel reachable.'
+  ]
+
+  if (input.channelType === 'http') {
+    const channel = findChannelByType(input.config, 'http')
+    if (channel?.port) {
+      messages.push(
+        `After it starts, open ${formatDisplayUrl(
+          'http',
+          channel.host?.trim() || DEFAULT_HTTP_HOST,
+          channel.port,
+          '/'
+        )}.`
+      )
+    }
+  }
+
+  if (input.channelType === 'websocket') {
+    const channel = findChannelByType(input.config, 'websocket')
+    if (channel?.port) {
+      messages.push(
+        `After it starts, connect to ${formatDisplayUrl(
+          'ws',
+          channel.host?.trim() || DEFAULT_HTTP_HOST,
+          channel.port,
+          normalizeHttpPath(channel.path ?? DEFAULT_WEBSOCKET_PATH)
+        )}.`
+      )
+    }
+  }
+
+  return messages
+}
+
 function findChannelByType<TType extends OnboardChannelType>(
   config: RawGatewayConfig | null,
   type: TType
@@ -129,21 +276,7 @@ async function selectChannelType(
   rl: QuestionInterface,
   existingConfig: RawGatewayConfig | null
 ): Promise<OnboardChannelType> {
-  const existingType = existingConfig?.channels?.[0]?.type
-  const defaultSelection =
-    existingType === 'wechat' ||
-    existingType === 'whatsapp' ||
-    existingType === 'telegram' ||
-    existingType === 'lark'
-      ? existingType
-      : 'wechat'
-
-  const options: Array<{ key: string; type: OnboardChannelType; label: string }> = [
-    { key: '1', type: 'wechat', label: 'WeChat' },
-    { key: '2', type: 'whatsapp', label: 'WhatsApp' },
-    { key: '3', type: 'telegram', label: 'Telegram' },
-    { key: '4', type: 'lark', label: 'Lark' }
-  ]
+  const { defaultSelection, options } = listOnboardChannelOptions(existingConfig)
 
   console.log('\nChannel setup')
   for (const option of options) {
@@ -171,7 +304,7 @@ async function selectChannelType(
       return selectedByType.type
     }
 
-    console.log('Please choose 1, 2, 3, or 4.')
+    console.log('Please choose 1, 2, 3, 4, 5, or 6.')
   }
 }
 
@@ -551,7 +684,121 @@ async function configureLarkChannel(
   return nextConfig
 }
 
-export async function runOnboard(configPath?: string): Promise<void> {
+async function configureHttpChannel(
+  rl: QuestionInterface,
+  configSource: GatewayConfigSource,
+  existingConfig: RawGatewayConfig | null
+): Promise<RawGatewayConfig> {
+  const existingChannel = findChannelByType(existingConfig, 'http')
+  const channelId = existingChannel?.id ?? DEFAULT_CHANNEL_IDS.http
+
+  console.log('\nHTTP setup')
+  const host = await askRequired(rl, 'Bind host', existingChannel?.host ?? DEFAULT_HTTP_HOST)
+  const port = await askPort(rl, 'Bind port', existingChannel?.port ?? DEFAULT_HTTP_PORT)
+  const chatPath = normalizeHttpPath(
+    await askRequired(rl, 'Chat path', existingChannel?.chatPath ?? DEFAULT_HTTP_CHAT_PATH)
+  )
+  const ssePath = normalizeHttpPath(
+    await askRequired(rl, 'SSE path', existingChannel?.ssePath ?? DEFAULT_HTTP_SSE_PATH)
+  )
+  const serveWebApp = await askYesNo(
+    rl,
+    'Serve the built-in browser chat UI',
+    existingChannel?.serveWebApp ?? true
+  )
+  const protectWithToken = await askYesNo(
+    rl,
+    'Protect HTTP routes with a token',
+    Boolean(existingChannel?.token || existingChannel?.autoGenerateToken)
+  )
+
+  let autoGenerateToken = false
+  let token: string | undefined
+  if (protectWithToken) {
+    autoGenerateToken = await askYesNo(
+      rl,
+      'Auto-generate the token on first start',
+      existingChannel?.autoGenerateToken ?? true
+    )
+
+    if (!autoGenerateToken) {
+      token = await askRequired(rl, 'Static access token', existingChannel?.token ?? '')
+    }
+  }
+
+  const title = serveWebApp
+    ? await askRequired(rl, 'Web UI title', existingChannel?.title ?? DEFAULT_HTTP_TITLE)
+    : existingChannel?.title ?? DEFAULT_HTTP_TITLE
+
+  const nextConfig = upsertHttpChannelConfig(createSeedGatewayConfig(existingConfig), {
+    id: channelId,
+    type: 'http',
+    host,
+    port,
+    chatPath,
+    ssePath,
+    token,
+    serveWebApp,
+    autoGenerateToken,
+    title
+  })
+
+  const savedConfigSource = await writeGatewayConfigSource(configSource, nextConfig)
+  await printSavedConfigMessage(savedConfigSource)
+  console.log(`HTTP API will listen on ${formatDisplayUrl('http', host, port, chatPath)}.`)
+  if (serveWebApp) {
+    console.log(`Web UI will be available at ${formatDisplayUrl('http', host, port, '/')}.`)
+  }
+  if (protectWithToken && autoGenerateToken) {
+    console.log('A token will be generated automatically on first start.')
+  }
+
+  return nextConfig
+}
+
+async function configureWebSocketChannel(
+  rl: QuestionInterface,
+  configSource: GatewayConfigSource,
+  existingConfig: RawGatewayConfig | null
+): Promise<RawGatewayConfig> {
+  const existingChannel = findChannelByType(existingConfig, 'websocket')
+  const channelId = existingChannel?.id ?? DEFAULT_CHANNEL_IDS.websocket
+
+  console.log('\nWebSocket setup')
+  const host = await askRequired(rl, 'Bind host', existingChannel?.host ?? DEFAULT_HTTP_HOST)
+  const port = await askPort(rl, 'Bind port', existingChannel?.port ?? DEFAULT_WEBSOCKET_PORT)
+  const path = normalizeHttpPath(
+    await askRequired(rl, 'WebSocket path', existingChannel?.path ?? DEFAULT_WEBSOCKET_PATH)
+  )
+  const protectWithToken = await askYesNo(
+    rl,
+    'Protect WebSocket connections with a token',
+    Boolean(existingChannel?.token)
+  )
+  const token = protectWithToken
+    ? await askRequired(rl, 'Static access token', existingChannel?.token ?? '')
+    : undefined
+
+  const nextConfig = upsertWebSocketChannelConfig(createSeedGatewayConfig(existingConfig), {
+    id: channelId,
+    type: 'websocket',
+    host,
+    port,
+    path,
+    token
+  })
+
+  const savedConfigSource = await writeGatewayConfigSource(configSource, nextConfig)
+  await printSavedConfigMessage(savedConfigSource)
+  console.log(`WebSocket endpoint will listen on ${formatDisplayUrl('ws', host, port, path)}.`)
+
+  return nextConfig
+}
+
+export async function runOnboard(
+  configPath?: string,
+  options: RunOnboardOptions = {}
+): Promise<void> {
   ensureInteractiveTerminal()
 
   const configSource = await readGatewayConfigSource({ filePath: configPath })
@@ -564,22 +811,35 @@ export async function runOnboard(configPath?: string): Promise<void> {
 
     const configWithSelectedAgent = await selectAgentConfig(rl, existingConfig)
     const channelType = await selectChannelType(rl, configWithSelectedAgent)
+    let nextConfig: RawGatewayConfig
     switch (channelType) {
       case 'wechat':
-        await configureWechatChannel(rl, configSource, configWithSelectedAgent)
+        nextConfig = await configureWechatChannel(rl, configSource, configWithSelectedAgent)
         break
       case 'whatsapp':
-        await configureWhatsAppChannel(rl, configSource, configWithSelectedAgent)
+        nextConfig = await configureWhatsAppChannel(rl, configSource, configWithSelectedAgent)
         break
       case 'telegram':
-        await configureTelegramChannel(rl, configSource, configWithSelectedAgent)
+        nextConfig = await configureTelegramChannel(rl, configSource, configWithSelectedAgent)
         break
       case 'lark':
-        await configureLarkChannel(rl, configSource, configWithSelectedAgent)
+        nextConfig = await configureLarkChannel(rl, configSource, configWithSelectedAgent)
+        break
+      case 'http':
+        nextConfig = await configureHttpChannel(rl, configSource, configWithSelectedAgent)
+        break
+      case 'websocket':
+        nextConfig = await configureWebSocketChannel(rl, configSource, configWithSelectedAgent)
         break
     }
 
-    console.log('Onboarding complete.')
+    for (const message of buildOnboardCompletionMessages({
+      config: nextConfig,
+      channelType,
+      willStartGatewayAfterCompletion: options.willStartGatewayAfterCompletion
+    })) {
+      console.log(message)
+    }
   } finally {
     rl.close()
   }

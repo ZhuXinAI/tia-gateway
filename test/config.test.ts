@@ -22,6 +22,7 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
   process.env.TEST_LARK_APP_ID = 'cli_app_id'
   process.env.TEST_LARK_APP_SECRET = 'cli_app_secret'
   process.env.TEST_TELEGRAM_BOT_TOKEN = '123456:test-token'
+  process.env.TEST_HTTP_TOKEN = 'http-secret'
 
   const configPath = join(tempDir, 'tia-gateway.config.json')
   await writeFile(
@@ -32,7 +33,8 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
           type: 'acp',
           agent: {
             preset: 'claude',
-            cwd: './workspace'
+            cwd: './workspace',
+            showTools: true
           }
         },
         channels: [
@@ -57,6 +59,24 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
             id: 'whatsapp-main',
             authDirectoryPath: './whatsapp-auth',
             groupRequireMention: false
+          },
+          {
+            type: 'http',
+            id: 'http-main',
+            host: '0.0.0.0',
+            port: 4311,
+            chatPath: '/gateway/chat',
+            ssePath: '/sse',
+            token: '${TEST_HTTP_TOKEN}',
+            serveWebApp: true,
+            autoGenerateToken: true,
+            title: 'Gateway Workbench'
+          },
+          {
+            type: 'websocket',
+            id: 'websocket-main',
+            port: 4312,
+            path: '/gateway/ws'
           }
         ]
       },
@@ -71,6 +91,7 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
   assert.equal(config.protocol.type, 'acp')
   assert.equal(config.protocol.agent.command, 'npx')
   assert.equal(config.protocol.agent.cwd, join(tempDir, 'workspace'))
+  assert.equal(config.protocol.agent.showTools, true)
   assert.equal(config.channels[0]?.type, 'wechat')
   assert.equal(config.channels[0]?.dataDirectoryPath, join(tempDir, 'wechat-data'))
   assert.equal(config.channels[1]?.type, 'lark')
@@ -81,6 +102,19 @@ test('loadGatewayConfig resolves env vars and relative paths', async () => {
   assert.equal(config.channels[3]?.type, 'whatsapp')
   assert.equal(config.channels[3]?.authDirectoryPath, join(tempDir, 'whatsapp-auth'))
   assert.equal(config.channels[3]?.groupRequireMention, false)
+  assert.equal(config.channels[4]?.type, 'http')
+  assert.equal(config.channels[4]?.host, '0.0.0.0')
+  assert.equal(config.channels[4]?.port, 4311)
+  assert.equal(config.channels[4]?.chatPath, '/gateway/chat')
+  assert.equal(config.channels[4]?.ssePath, '/sse')
+  assert.equal(config.channels[4]?.token, 'http-secret')
+  assert.equal(config.channels[4]?.serveWebApp, true)
+  assert.equal(config.channels[4]?.autoGenerateToken, true)
+  assert.equal(config.channels[4]?.title, 'Gateway Workbench')
+  assert.equal(config.channels[5]?.type, 'websocket')
+  assert.equal(config.channels[5]?.host, '127.0.0.1')
+  assert.equal(config.channels[5]?.port, 4312)
+  assert.equal(config.channels[5]?.path, '/gateway/ws')
 
   await rm(tempDir, { recursive: true, force: true })
 })

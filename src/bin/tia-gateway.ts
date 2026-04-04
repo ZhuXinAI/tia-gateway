@@ -44,7 +44,7 @@ async function startGatewayCommand(options: StartCommandOptions): Promise<void> 
     console.log(
       `Missing ${missingPieces.join(' and ')} at ${describeGatewayConfigSource(configSource)}. Starting interactive onboarding.`
     )
-    await runOnboard(options.config)
+    await runOnboard(options.config, { willStartGatewayAfterCompletion: true })
   }
 
   const config = await loadGatewayConfig({
@@ -52,6 +52,7 @@ async function startGatewayCommand(options: StartCommandOptions): Promise<void> 
     agentSelection: options.agent,
     cwd: options.cwd,
     showThoughts: options.showThoughts,
+    showTools: options.showTools,
     logLevel: options.logLevel
   })
 
@@ -67,6 +68,8 @@ async function startGatewayCommand(options: StartCommandOptions): Promise<void> 
   const protocol = createProtocolAdapter(config.protocol, logger.child('protocol'))
   const channels = createChannels(config.channels, {
     logger: logger.child('channels'),
+    protocol,
+    protocolConfig: config.protocol,
     onWechatQrCode: ({ channelId, value }) => {
       console.log('')
       console.log(`[${channelId}] Scan this WeChat QR code:`)

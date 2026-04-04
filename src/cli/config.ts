@@ -1,9 +1,11 @@
 import type {
   RawChannelConfig,
   RawGatewayConfig,
+  RawHttpChannelConfig,
   RawLarkChannelConfig,
   RawTelegramChannelConfig,
   RawWhatsAppChannelConfig,
+  RawWebSocketChannelConfig,
   RawWechatChannelConfig
 } from '../config.js'
 import { BUILT_IN_AGENTS, type AgentPreset } from '../protocols/acp/config.js'
@@ -47,7 +49,8 @@ export function createSeedGatewayConfig(existingConfig: RawGatewayConfig | null)
       type: 'acp',
       agent: {
         preset: 'codex',
-        showThoughts: false
+        showThoughts: false,
+        showTools: false
       }
     },
     channels: [...(existingConfig?.channels ?? [])]
@@ -82,6 +85,9 @@ export function upsertAcpAgentSelection(
     ...(protocol.agent?.env ? { env: { ...protocol.agent.env } } : {}),
     ...(protocol.agent?.showThoughts !== undefined
       ? { showThoughts: protocol.agent.showThoughts }
+      : {}),
+    ...(protocol.agent?.showTools !== undefined
+      ? { showTools: protocol.agent.showTools }
       : {})
   }
 
@@ -137,6 +143,20 @@ export function upsertTelegramChannelConfig(
 export function upsertLarkChannelConfig(
   config: RawGatewayConfig,
   channel: RawLarkChannelConfig
+): RawGatewayConfig {
+  return upsertChannelConfig(config, channel)
+}
+
+export function upsertHttpChannelConfig(
+  config: RawGatewayConfig,
+  channel: RawHttpChannelConfig
+): RawGatewayConfig {
+  return upsertChannelConfig(config, channel)
+}
+
+export function upsertWebSocketChannelConfig(
+  config: RawGatewayConfig,
+  channel: RawWebSocketChannelConfig
 ): RawGatewayConfig {
   return upsertChannelConfig(config, channel)
 }

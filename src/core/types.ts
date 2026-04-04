@@ -1,4 +1,11 @@
-export type ChannelType = 'wechat' | 'lark' | 'telegram' | 'whatsapp' | (string & {})
+export type ChannelType =
+  | 'wechat'
+  | 'lark'
+  | 'telegram'
+  | 'whatsapp'
+  | 'http'
+  | 'websocket'
+  | (string & {})
 export type AgentProtocolType = 'acp' | (string & {})
 
 export type TextContentBlock = {
@@ -34,6 +41,61 @@ export interface ChannelMessage {
   contentBlocks?: ProtocolContentBlock[]
 }
 
+export type AgentProtocolEvent =
+  | {
+      source: 'acp'
+      type: 'permission'
+      title?: string
+      optionId: string
+    }
+  | {
+      source: 'acp'
+      type: 'tool-call'
+      toolCallId: string
+      title: string
+      status?: string
+      rawInput?: unknown
+    }
+  | {
+      source: 'acp'
+      type: 'tool-call-update'
+      toolCallId: string
+      title?: string
+      status?: string
+      content?: unknown[]
+      rawInput?: unknown
+      rawOutput?: unknown
+    }
+  | {
+      source: 'acp'
+      type: 'plan'
+      entries: Array<{
+        status: string
+        content: string
+      }>
+    }
+
+export type ChannelEvent =
+  | {
+      type: 'typing'
+    }
+  | {
+      type: 'text-delta'
+      delta: string
+    }
+  | {
+      type: 'reasoning-delta'
+      delta: string
+    }
+  | {
+      type: 'protocol-event'
+      event: AgentProtocolEvent
+    }
+  | {
+      type: 'error'
+      message: string
+    }
+
 export interface ChannelAdapter {
   readonly id: string
   readonly type: ChannelType
@@ -42,12 +104,17 @@ export interface ChannelAdapter {
   stop(): Promise<void>
   send(remoteChatId: string, text: string): Promise<void>
   sendTyping?(remoteChatId: string, message?: ChannelMessage): Promise<void>
+  sendEvent?(remoteChatId: string, event: ChannelEvent, message?: ChannelMessage): Promise<void>
   acknowledgeMessage?(messageId: string): Promise<void>
 }
 
 export type AgentProtocolTurnCallbacks = {
   onThought?: (text: string) => Promise<void>
+  onToolCall?: (text: string) => Promise<void>
   onTyping?: () => Promise<void>
+  onTextDelta?: (text: string) => Promise<void>
+  onReasoningDelta?: (text: string) => Promise<void>
+  onEvent?: (event: AgentProtocolEvent) => Promise<void>
 }
 
 export interface AgentProtocolTurnInput {
@@ -62,9 +129,19 @@ export interface AgentProtocolTurnResult {
   stopReason?: string
 }
 
+export type AgentProtocolSessionSummary = {
+  sessionId: string
+  cwd: string
+  title?: string
+  updatedAt?: string
+}
+
 export interface AgentProtocolAdapter {
   readonly type: AgentProtocolType
   runTurn(input: AgentProtocolTurnInput): Promise<AgentProtocolTurnResult>
   closeSession(sessionKey: string): Promise<void>
+  listSessions?(input?: { cwd?: string }): Promise<AgentProtocolSessionSummary[]>
+  attachSession?(sessionKey: string, sessionId: string): Promise<void>
+  resetSession?(sessionKey: string): Promise<void>
   stop(): Promise<void>
 }

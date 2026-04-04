@@ -1,0 +1,9 @@
+export const DEFAULT_WECHAT_API_BASE_URL = 'https://ilinkai.weixin.qq.com'
+export const CHANNEL_VERSION = '1.0.0'
+export const DEFAULT_LONG_POLL_TIMEOUT_MS = 25_000
+export const DEFAULT_API_TIMEOUT_MS = 15_000
+export const DEFAULT_CONFIG_TIMEOUT_MS = 15_000
+export const DEFAULT_QR_POLL_TIMEOUT_MS = 35_000
+export const DEFAULT_RECONNECT_DELAY_MS = 5_000
+export const DEFAULT_QR_TTL_MS = 5 * 60_000
+export const TEXT_CHUNK_LIMIT = 4_000

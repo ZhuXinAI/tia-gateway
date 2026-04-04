@@ -6,6 +6,7 @@ export type StartCommandOptions = {
   agent?: string
   cwd?: string
   showThoughts?: boolean
+  showTools?: boolean
   logLevel?: LogLevel
 }
 
@@ -26,6 +27,7 @@ function addStartOptions(command: Command): Command {
     .option('--agent <value>', 'ACP preset or raw ACP command override')
     .option('--cwd <dir>', 'Working directory for the ACP agent')
     .option('--show-thoughts', 'Forward ACP thinking messages to the channel')
+    .option('--show-tools', 'Forward ACP tool progress messages to the channel')
     .option('--log-level <level>', 'debug | info | warn | error')
 }
 
@@ -36,6 +38,7 @@ function readStartOptions(command: Command): StartCommandOptions {
     agent: options.agent?.trim() || undefined,
     cwd: options.cwd?.trim() || undefined,
     showThoughts: options.showThoughts,
+    showTools: options.showTools,
     logLevel: options.logLevel
   }
 }

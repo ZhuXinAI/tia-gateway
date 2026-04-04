@@ -14,20 +14,27 @@ export { defaultStorageDir } from './config-store.js'
 export { loadGatewayConfig } from './config.js'
 export type {
   AgentProtocolAdapter,
+  AgentProtocolEvent,
+  AgentProtocolSessionSummary,
   AgentProtocolTurnCallbacks,
   AgentProtocolTurnInput,
   AgentProtocolTurnResult,
   ChannelAdapter,
+  ChannelEvent,
   ChannelMessage,
   ProtocolContentBlock
 } from './core/types.js'
 export type {
   LoadGatewayConfigOptions,
+  RawHttpChannelConfig,
   RawGatewayConfig,
+  RawWebSocketChannelConfig,
   ResolvedGatewayConfig,
   ResolvedChannelConfig,
+  ResolvedHttpChannelConfig,
   ResolvedLarkChannelConfig,
   ResolvedTelegramChannelConfig,
+  ResolvedWebSocketChannelConfig,
   ResolvedWhatsAppChannelConfig,
   ResolvedWechatChannelConfig
 } from './config.js'

@@ -9,7 +9,8 @@
     "agent": {
       "preset": "codex",
       "cwd": "${PWD}",
-      "showThoughts": false
+      "showThoughts": false,
+      "showTools": false
     }
   },
   "channels": [
@@ -35,6 +36,24 @@
       "id": "whatsapp-main",
       "authDirectoryPath": "~/.tia-gateway/channels/whatsapp-main",
       "groupRequireMention": true
+    },
+    {
+      "type": "http",
+      "id": "http-main",
+      "host": "127.0.0.1",
+      "port": 4311,
+      "chatPath": "/chat",
+      "ssePath": "/sse",
+      "serveWebApp": true,
+      "autoGenerateToken": true,
+      "title": "TIA Gateway"
+    },
+    {
+      "type": "websocket",
+      "id": "websocket-main",
+      "host": "127.0.0.1",
+      "port": 4312,
+      "path": "/ws"
     }
   ]
 }

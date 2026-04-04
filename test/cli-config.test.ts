@@ -5,7 +5,9 @@ import {
   hasConfiguredAcpAgent,
   listAvailableAgentPresets,
   upsertAcpAgentSelection,
+  upsertHttpChannelConfig,
   upsertTelegramChannelConfig,
+  upsertWebSocketChannelConfig,
   upsertWhatsAppChannelConfig
 } from '../src/cli/config.js'
 
@@ -15,6 +17,8 @@ test('createSeedGatewayConfig provides a usable default config', () => {
   assert.equal(config.gateway?.logLevel, 'info')
   assert.equal(config.protocol?.type, 'acp')
   assert.equal(config.protocol?.agent?.preset, 'codex')
+  assert.equal(config.protocol?.agent?.showThoughts, false)
+  assert.equal(config.protocol?.agent?.showTools, false)
   assert.deepEqual(config.channels, [])
 })
 
@@ -107,7 +111,8 @@ test('upsertAcpAgentSelection stores preset choices and clears raw command field
           command: 'npx',
           args: ['legacy-agent', '--acp'],
           cwd: './workspace',
-          showThoughts: true
+          showThoughts: true,
+          showTools: true
         }
       }
     },
@@ -120,7 +125,8 @@ test('upsertAcpAgentSelection stores preset choices and clears raw command field
   assert.deepEqual(updated.protocol?.agent, {
     preset: 'claude',
     cwd: './workspace',
-    showThoughts: true
+    showThoughts: true,
+    showTools: true
   })
 })
 
@@ -131,7 +137,8 @@ test('upsertAcpAgentSelection stores raw commands and clears preset fields', () 
         type: 'acp',
         agent: {
           preset: 'codex',
-          showThoughts: false
+          showThoughts: false,
+          showTools: true
         }
       }
     }),
@@ -145,7 +152,8 @@ test('upsertAcpAgentSelection stores raw commands and clears preset fields', () 
   assert.deepEqual(updated.protocol?.agent, {
     command: 'npx',
     args: ['my-agent', '--acp'],
-    showThoughts: false
+    showThoughts: false,
+    showTools: true
   })
 })
 
@@ -202,6 +210,75 @@ test('upsertWhatsAppChannelConfig preserves an existing id while updating settin
       type: 'whatsapp',
       authDirectoryPath: '~/.tia-gateway/channels/whatsapp-main',
       groupRequireMention: false
+    }
+  ])
+})
+
+test('upsertHttpChannelConfig updates an existing HTTP channel and preserves its id', () => {
+  const updated = upsertHttpChannelConfig(
+    {
+      channels: [
+        {
+          id: 'custom-http',
+          type: 'http',
+          host: '127.0.0.1',
+          port: 4311,
+          chatPath: '/chat',
+          ssePath: '/sse',
+          serveWebApp: false,
+          autoGenerateToken: false
+        }
+      ]
+    },
+    {
+      id: 'http-main',
+      type: 'http',
+      host: '0.0.0.0',
+      port: 4319,
+      chatPath: '/gateway/chat',
+      ssePath: '/gateway/sse',
+      serveWebApp: true,
+      autoGenerateToken: true,
+      title: 'Gateway Workbench'
+    }
+  )
+
+  assert.deepEqual(updated.channels, [
+    {
+      id: 'custom-http',
+      type: 'http',
+      host: '0.0.0.0',
+      port: 4319,
+      chatPath: '/gateway/chat',
+      ssePath: '/gateway/sse',
+      serveWebApp: true,
+      autoGenerateToken: true,
+      title: 'Gateway Workbench'
+    }
+  ])
+})
+
+test('upsertWebSocketChannelConfig appends a websocket channel when none exists', () => {
+  const updated = upsertWebSocketChannelConfig(
+    createSeedGatewayConfig(null),
+    {
+      id: 'websocket-main',
+      type: 'websocket',
+      host: '127.0.0.1',
+      port: 4312,
+      path: '/ws',
+      token: 'secret'
+    }
+  )
+
+  assert.deepEqual(updated.channels, [
+    {
+      id: 'websocket-main',
+      type: 'websocket',
+      host: '127.0.0.1',
+      port: 4312,
+      path: '/ws',
+      token: 'secret'
     }
   ])
 })

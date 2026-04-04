@@ -24,6 +24,7 @@ export interface RawAcpProtocolConfig {
     cwd?: string
     env?: Record<string, string>
     showThoughts?: boolean
+    showTools?: boolean
   }
   agents?: Record<string, AgentPreset>
 }
@@ -34,6 +35,7 @@ export interface ResolvedAcpProtocolConfig {
   agent: ResolvedAgentConfig & {
     cwd: string
     showThoughts: boolean
+    showTools: boolean
   }
 }
 
@@ -42,6 +44,7 @@ export type ResolveAcpProtocolConfigOptions = {
   agentSelection?: string
   cwd?: string
   showThoughts?: boolean
+  showTools?: boolean
 }
 
 export const BUILT_IN_AGENTS: Record<string, AgentPreset> = {
@@ -54,7 +57,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentPreset> = {
   claude: {
     label: 'Claude Code',
     command: 'npx',
-    args: ['-y', '@zed-industries/claude-code-acp'],
+    args: ['-y', '@agentclientprotocol/claude-agent-acp'],
     description: 'Claude Code ACP'
   },
   gemini: {
@@ -172,7 +175,8 @@ export function resolveAcpProtocolConfig(
     agent: {
       ...resolvedAgent,
       cwd: options.cwd ?? raw.agent?.cwd ?? process.cwd(),
-      showThoughts: options.showThoughts ?? raw.agent?.showThoughts ?? false
+      showThoughts: options.showThoughts ?? raw.agent?.showThoughts ?? false,
+      showTools: options.showTools ?? raw.agent?.showTools ?? false
     }
   }
 }

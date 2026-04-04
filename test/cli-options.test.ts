@@ -22,7 +22,7 @@ async function runCli(argv: string[]): Promise<Array<Record<string, unknown>>> {
 }
 
 test('CLI defaults to start when no subcommand is provided', async () => {
-  const calls = await runCli(['--agent', 'codex', '--show-thoughts'])
+  const calls = await runCli(['--agent', 'codex', '--show-thoughts', '--show-tools'])
 
   assert.deepEqual(calls, [
     {
@@ -31,6 +31,7 @@ test('CLI defaults to start when no subcommand is provided', async () => {
       config: undefined,
       cwd: undefined,
       showThoughts: true,
+      showTools: true,
       logLevel: undefined
     }
   ])
