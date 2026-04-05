@@ -342,12 +342,18 @@ The HTTP connector:
 
 - listens on the configured `host` and `port`
 - can optionally serve a built-in browser chat shell at `GET /`
+- serves shell assets at `GET /app.js` and `GET /app.css` when `serveWebApp` is enabled
 - accepts `POST <chatPath>` requests with either a simple `{ id, message }` body or AI SDK-style `{ id, messages }`
 - streams responses back as AI SDK UI-message SSE with `x-vercel-ai-ui-message-stream: v1`
 - supports resumable streams at both `<chatPath>/:id/stream` and `<ssePath>/:id`
 - uses `resumable-stream` with an in-memory publisher/subscriber bus
-- can protect both POST and resume routes with an optional static `token`
+- can protect chat, session, and resume routes with an optional static `token`
 - can auto-generate and persist an HTTP token under `~/.tia-gateway/channels/<channel-id>/http-token.json`
+- includes a web-shell session API at `<chatPath>/sessions`:
+  - `GET <chatPath>/sessions`: list sessions shown in the shell sidebar
+  - `POST <chatPath>/sessions`: create a new draft shell session
+  - `GET <chatPath>/sessions/:chatId`: load shell session detail and stored messages
+  - `DELETE <chatPath>/sessions/:chatId`: delete only draft sessions (attached ACP sessions are protected)
 
 This makes it straightforward to point an AI SDK frontend at the gateway by setting the transport `api` to the configured `<chatPath>`.
 
@@ -373,6 +379,7 @@ The WebSocket connector:
 - ACP permission requests are auto-approved today.
 - Idle session cleanup is controlled by `gateway.idleTimeoutMs`.
 - HTTP streams can be resumed while a turn is still active via the configured SSE endpoints.
+- Attaching an existing ACP session restores server-side session context, but replayed history is intentionally not emitted back into channel/web chat logs.
 - Slash commands supported by the gateway:
   - `/new`: clear the chat's current ACP binding and start fresh on next message
   - `/list`: list attachable ACP sessions from the current agent
@@ -398,6 +405,12 @@ ACP chat-to-session bindings are stored in:
 
 ```text
 ~/.tia-gateway/acp-session-bindings.json
+```
+
+HTTP web-shell session records are stored in:
+
+```text
+~/.tia-gateway/channels/<channel-id>/http-sessions.json
 ```
 
 For WeChat channels, the channel state is typically stored under:
@@ -427,19 +440,26 @@ This is used for things like:
 Install dependencies:
 
 ```bash
-npm install
+pnpm install
 ```
+
+Workspace layout:
+
+- `.`: publishable CLI package (`tia-gateway`)
+- `apps/web`: bundled browser shell and web-only dependencies
+
+`@tailwindcss/cli` depends on `@parcel/watcher` platform binaries, so do not install with `--no-optional` or `--omit=optional`. If `pnpm` blocks build scripts, run `pnpm approve-builds` and allow `esbuild`/`@parcel/watcher`.
 
 Build:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Run tests:
 
 ```bash
-npm test
+pnpm test
 ```
 
 Run the built CLI locally:
@@ -451,7 +471,7 @@ node dist/bin/tia-gateway.js --help
 Dry-run the package contents:
 
 ```bash
-npm pack --dry-run
+pnpm pack --dry-run
 ```
 
 ## Attribution

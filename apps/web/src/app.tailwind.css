@@ -1,7 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
-@source "./app.tsx";
+@source "./**/*.{ts,tsx}";
 
 @theme inline {
   --color-background: var(--background);
@@ -52,7 +52,7 @@
   --border: oklch(0.88 0.015 92);
   --input: oklch(0.9 0.014 92);
   --ring: oklch(0.66 0.09 248);
-  --radius: 1.3rem;
+  --radius: 1rem;
   --shadow-soft: 0 24px 64px color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
@@ -64,12 +64,14 @@
   html,
   body,
   #app {
+    height: 100%;
     min-height: 100%;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
     margin: 0;
+    overflow: hidden;
     background-image:
       radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 10%, transparent), transparent 30%),
       radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 55%, white), transparent 28%),
@@ -110,5 +112,22 @@
 
   .shell-scrollbar::-webkit-scrollbar-track {
     background: transparent;
+  }
+
+  .shimmer {
+    color: transparent;
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--primary) 35%, transparent) 45%, transparent 100%);
+    background-size: 300% 100%;
+    background-clip: text;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -100% 0;
+    }
   }
 }

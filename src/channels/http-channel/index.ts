@@ -1055,10 +1055,26 @@ export class HttpChannel extends AbstractChannel {
       return cachedAsset
     }
 
-    const filePath = new URL(`../../web/${filename}`, import.meta.url)
-    const asset = await readFile(filePath, 'utf-8')
-    this.webAssetCache.set(filename, asset)
-    return asset
+    const candidatePaths = [
+      new URL(`../../web/${filename}`, import.meta.url),
+      new URL(`../../../apps/web/dist/${filename}`, import.meta.url)
+    ]
+
+    for (const filePath of candidatePaths) {
+      try {
+        const asset = await readFile(filePath, 'utf-8')
+        this.webAssetCache.set(filename, asset)
+        return asset
+      } catch (error) {
+        if (!isEnoent(error)) {
+          throw error
+        }
+      }
+    }
+
+    throw new Error(
+      `Missing web asset ${filename}. Run \"pnpm run build:web\" before starting the HTTP web shell.`
+    )
   }
 
   private renderWebAppHtml(): string {

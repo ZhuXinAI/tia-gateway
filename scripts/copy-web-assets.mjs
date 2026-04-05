@@ -1,7 +1,7 @@
 import { access, cp, mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const sourceDir = resolve('src/web')
+const sourceDir = resolve('apps/web/dist')
 const targetDir = resolve('dist/web')
 const requiredAssets = ['app.js', 'app.css']
 
@@ -10,7 +10,7 @@ for (const asset of requiredAssets) {
     await access(resolve(sourceDir, asset))
   } catch {
     throw new Error(
-      `Missing ${asset} in src/web. Run "npm run build:web" before "npm run build".`
+      `Missing ${asset} in apps/web/dist. Run "pnpm run build:web" before "pnpm run build".`
     )
   }
 }

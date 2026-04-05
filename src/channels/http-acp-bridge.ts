@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { convertToModelMessages, streamText, type UIMessage } from 'ai'
+import { convertToModelMessages, streamText, type ToolSet, type UIMessage } from 'ai'
 import {
   createACPProvider,
   type ACPProvider
@@ -223,7 +223,8 @@ export class HttpAcpBridge {
 
     const result = streamText({
       model: providerEntry.provider.languageModel(),
-      tools: providerEntry.provider.tools,
+      // pnpm keeps transitive type trees isolated; normalize tool typing across ai/zod variants.
+      tools: providerEntry.provider.tools as unknown as ToolSet,
       messages: await convertToModelMessages(input.messages as Array<Omit<UIMessage, 'id'>>)
     })
 
