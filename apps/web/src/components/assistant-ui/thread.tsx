@@ -1,14 +1,14 @@
-import type { FC } from 'react'
+import { useMemo, type FC } from 'react'
 import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
   AuiIf,
-  BranchPickerPrimitive,
   ComposerPrimitive,
   ErrorPrimitive,
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
+  useAui,
   useAuiState
 } from '@assistant-ui/react'
 import {
@@ -26,9 +26,10 @@ import {
 } from 'lucide-react'
 
 import { ComposerAddAttachment, ComposerAttachments, UserMessageAttachments } from './attachment'
+import { ChainOfThoughtPanel } from './chain-of-thought'
+import { Checkpoint } from './checkpoint'
 import { MarkdownText } from './markdown-text'
 import { MessageTiming } from './message-timing'
-import { ToolFallback } from './tool-fallback'
 import { TooltipIconButton } from './tooltip-icon-button'
 import { ComposerQuotePreview, QuoteBlock, SelectionToolbar } from './quote'
 import { Button } from '../ui/button'
@@ -68,9 +69,29 @@ export const Thread: FC = () => {
 const ThreadMessage: FC = () => {
   const role = useAuiState((s) => s.message.role)
   const isEditing = useAuiState((s) => s.message.composer.isEditing)
-  if (isEditing) return <EditComposer />
-  if (role === 'user') return <UserMessage />
-  return <AssistantMessage />
+  const showRecoveredCheckpoint = useAuiState((s) => {
+    const { index } = s.message
+    if (index <= 0) {
+      return false
+    }
+
+    const currentMessage = s.thread.messages[index]
+    const previousMessage = s.thread.messages[index - 1]
+    if (!currentMessage || !previousMessage) {
+      return false
+    }
+
+    const previousIsReplay = previousMessage.id.startsWith('replay-')
+    const currentIsReplay = currentMessage.id.startsWith('replay-')
+    return previousIsReplay && !currentIsReplay
+  })
+
+  return (
+    <>
+      {showRecoveredCheckpoint ? <Checkpoint /> : null}
+      {isEditing ? <EditComposer /> : role === 'user' ? <UserMessage /> : <AssistantMessage />}
+    </>
+  )
 }
 
 const ThreadScrollToBottom: FC = () => {
@@ -206,13 +227,12 @@ const AssistantMessage: FC = () => {
       data-role="assistant"
     >
       <div className="aui-assistant-message-content wrap-break-word px-2 leading-relaxed text-foreground">
-        <MessagePrimitive.Parts>
-          {({ part }) => {
-            if (part.type === 'text') return <MarkdownText />
-            if (part.type === 'tool-call') return part.toolUI ?? <ToolFallback {...part} />
-            return null
+        <MessagePrimitive.Parts
+          components={{
+            Text: () => <MarkdownText />,
+            ChainOfThought: ChainOfThoughtPanel
           }}
-        </MessagePrimitive.Parts>
+        />
         <MessageError />
       </div>
 
@@ -332,26 +352,95 @@ const EditComposer: FC = () => {
   )
 }
 
-const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({ className, ...rest }) => {
+const BranchPicker: FC<{ className?: string }> = ({ className }) => {
+  const aui = useAui()
+  const messageId = useAuiState((s) => s.message.id)
+  const branchNumber = useAuiState((s) => s.message.branchNumber)
+  const branchCount = useAuiState((s) => s.message.branchCount)
+  const isRunning = useAuiState((s) => s.thread.isRunning)
+  const canSwitchDuringRun = useAuiState((s) => s.thread.capabilities.switchBranchDuringRun)
+
+  const uniqueBranches = useMemo(() => {
+    const threadApi = aui.thread() as { getBranches?: (id: string) => string[] }
+    if (!messageId || typeof threadApi.getBranches !== 'function') {
+      return []
+    }
+
+    const rawBranches = threadApi.getBranches(messageId)
+    const deduped: string[] = []
+    const seen = new Set<string>()
+
+    for (const branchId of rawBranches) {
+      if (seen.has(branchId)) {
+        continue
+      }
+
+      seen.add(branchId)
+      deduped.push(branchId)
+    }
+
+    return deduped
+  }, [aui, messageId, branchNumber, branchCount])
+
+  const currentIndex = uniqueBranches.indexOf(messageId)
+  const previousBranchId = currentIndex > 0 ? uniqueBranches[currentIndex - 1] : undefined
+  const nextBranchId =
+    currentIndex >= 0 && currentIndex + 1 < uniqueBranches.length
+      ? uniqueBranches[currentIndex + 1]
+      : undefined
+
+  const disableNavigation = isRunning && !canSwitchDuringRun
+  if (branchCount <= 1) {
+    return null
+  }
+
+  const handlePrevious = () => {
+    if (disableNavigation) {
+      return
+    }
+
+    if (previousBranchId) {
+      aui.thread().switchToBranch(previousBranchId)
+      return
+    }
+
+    aui.message().switchToBranch({ position: 'previous' })
+  }
+
+  const handleNext = () => {
+    if (disableNavigation) {
+      return
+    }
+
+    if (nextBranchId) {
+      aui.thread().switchToBranch(nextBranchId)
+      return
+    }
+
+    aui.message().switchToBranch({ position: 'next' })
+  }
+
   return (
-    <BranchPickerPrimitive.Root
-      hideWhenSingleBranch
-      className={cn('aui-branch-picker-root mr-2 -ml-2 inline-flex items-center text-xs text-muted-foreground', className)}
-      {...rest}
-    >
-      <BranchPickerPrimitive.Previous asChild>
-        <TooltipIconButton tooltip="Previous">
-          <ChevronLeftIcon />
-        </TooltipIconButton>
-      </BranchPickerPrimitive.Previous>
+    <div className={cn('aui-branch-picker-root mr-2 -ml-2 inline-flex items-center text-xs text-muted-foreground', className)}>
+      <TooltipIconButton
+        tooltip="Previous"
+        disabled={disableNavigation || branchNumber <= 1}
+        onClick={handlePrevious}
+        type="button"
+      >
+        <ChevronLeftIcon />
+      </TooltipIconButton>
       <span className="aui-branch-picker-state font-medium">
-        <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
+        {branchNumber} / {branchCount}
       </span>
-      <BranchPickerPrimitive.Next asChild>
-        <TooltipIconButton tooltip="Next">
-          <ChevronRightIcon />
-        </TooltipIconButton>
-      </BranchPickerPrimitive.Next>
-    </BranchPickerPrimitive.Root>
+      <TooltipIconButton
+        tooltip="Next"
+        disabled={disableNavigation || branchNumber >= branchCount}
+        onClick={handleNext}
+        type="button"
+      >
+        <ChevronRightIcon />
+      </TooltipIconButton>
+    </div>
   )
 }

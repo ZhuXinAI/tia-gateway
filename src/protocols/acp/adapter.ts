@@ -5,6 +5,8 @@ import type { Logger } from '../../logging.js'
 import { PACKAGE_NAME, PACKAGE_VERSION } from '../../meta.js'
 import type {
   AgentProtocolAdapter,
+  AgentProtocolHistoryMessage,
+  AgentProtocolHistoryPart,
   AgentProtocolSessionSummary,
   AgentProtocolTurnInput,
   AgentProtocolTurnResult,
@@ -29,10 +31,10 @@ type AcpSessionState = {
   lastActivity: number
 }
 
-type AcpConnectionState = {
+type AcpConnectionState<TClient extends acp.Client = GatewayAcpClient> = {
   process: ChildProcess
   connection: acp.ClientSideConnection
-  client: GatewayAcpClient
+  client: TClient
   capabilities?: acp.AgentCapabilities
 }
 
@@ -56,7 +58,7 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
   }
 
   async runTurn(input: AgentProtocolTurnInput): Promise<AgentProtocolTurnResult> {
-    const session = await this.getOrCreateSession(input.sessionKey, input.callbacks)
+    const session = await this.getOrCreateSession(input.sessionKey)
     session.lastActivity = Date.now()
 
     session.client.updateCallbacks({
@@ -166,6 +168,32 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
     }
   }
 
+  async loadSessionHistory(input: {
+    sessionId: string
+    cwd?: string
+  }): Promise<AgentProtocolHistoryMessage[]> {
+    const connectionState = await this.createReplayConnection(
+      this.logger.child(`session-history:${input.sessionId}`)
+    )
+
+    try {
+      if (!connectionState.capabilities?.loadSession) {
+        throw new Error('ACP agent does not support session/load, cannot replay session history.')
+      }
+
+      await connectionState.connection.loadSession({
+        sessionId: input.sessionId,
+        cwd: input.cwd ?? this.config.agent.cwd,
+        mcpServers: []
+      })
+
+      return connectionState.client.getHistory()
+    } finally {
+      await this.closeConnection(connectionState.connection)
+      killAgent(connectionState.process)
+    }
+  }
+
   async resetSession(sessionKey: string): Promise<void> {
     await this.closeSession(sessionKey)
     await this.sessionBindingStore.delete(sessionKey)
@@ -177,8 +205,7 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
   }
 
   private async getOrCreateSession(
-    sessionKey: string,
-    callbacks?: AgentProtocolTurnInput['callbacks']
+    sessionKey: string
   ): Promise<AcpSessionState> {
     const existing = this.sessions.get(sessionKey)
     if (existing) {
@@ -186,7 +213,7 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
     }
 
     const log = this.logger.child(sessionKey)
-    const connectionState = await this.createConnection(log, callbacks)
+    const connectionState = await this.createConnection(log)
 
     try {
       const boundSessionId = await this.sessionBindingStore.get(sessionKey)
@@ -250,9 +277,30 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
   }
 
   private async createConnection(
-    log: Logger,
-    callbacks?: AgentProtocolTurnInput['callbacks']
+    log: Logger
   ): Promise<AcpConnectionState> {
+    const client = new GatewayAcpClient({
+      log: (message) => log.info(message),
+      onThoughtFlush: NOOP_ASYNC,
+      sendTyping: NOOP_ASYNC,
+      showThoughts: this.config.agent.showThoughts,
+      showTools: this.config.agent.showTools
+    })
+
+    return this.createConnectionWithClient(log, client)
+  }
+
+  private async createReplayConnection(
+    log: Logger
+  ): Promise<AcpConnectionState<AcpReplayClient>> {
+    const client = new AcpReplayClient()
+    return this.createConnectionWithClient(log, client)
+  }
+
+  private async createConnectionWithClient<TClient extends acp.Client>(
+    log: Logger,
+    client: TClient
+  ): Promise<AcpConnectionState<TClient>> {
     const useShell = process.platform === 'win32'
     log.info(
       `Spawning ACP agent: ${this.config.agent.command} ${this.config.agent.args.join(
@@ -282,18 +330,6 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
       processHandle.kill()
       throw new Error('ACP agent stdio streams are unavailable.')
     }
-
-    const client = new GatewayAcpClient({
-      log: (message) => log.info(message),
-      onThoughtFlush: callbacks?.onThought ?? NOOP_ASYNC,
-      onToolCall: callbacks?.onToolCall,
-      sendTyping: callbacks?.onTyping ?? NOOP_ASYNC,
-      onTextDelta: callbacks?.onTextDelta,
-      onReasoningDelta: callbacks?.onReasoningDelta,
-      onEvent: callbacks?.onEvent,
-      showThoughts: this.config.agent.showThoughts,
-      showTools: this.config.agent.showTools
-    })
 
     const stream = acp.ndJsonStream(
       Writable.toWeb(processHandle.stdin),
@@ -325,7 +361,7 @@ export class AcpAgentProtocolAdapter implements AgentProtocolAdapter {
   }
 
   private async tryLoadSession(
-    connectionState: AcpConnectionState,
+    connectionState: AcpConnectionState<GatewayAcpClient>,
     log: Logger,
     boundSessionId: string | undefined
   ): Promise<string | undefined> {
@@ -409,4 +445,300 @@ function killAgent(processHandle: ChildProcess): void {
       processHandle.kill('SIGKILL')
     }
   }, 5_000).unref()
+}
+
+class AcpReplayClient implements acp.Client {
+  private readonly history: AgentProtocolHistoryMessage[] = []
+  private readonly toolCalls = new Map<
+    string,
+    {
+      messageIndex: number
+      partIndex: number
+    }
+  >()
+  private thoughtBuffer = ''
+
+  getHistory(): AgentProtocolHistoryMessage[] {
+    this.flushThoughtBuffer()
+
+    return this.history.map((message) => ({
+      role: message.role,
+      parts: message.parts.map((part) => cloneHistoryPart(part))
+    }))
+  }
+
+  async requestPermission(
+    params: acp.RequestPermissionRequest
+  ): Promise<acp.RequestPermissionResponse> {
+    const optionId = params.options[0]?.optionId ?? 'allow'
+    return {
+      outcome: {
+        outcome: 'selected',
+        optionId
+      }
+    }
+  }
+
+  async sessionUpdate(params: acp.SessionNotification): Promise<void> {
+    const update = params.update
+    switch (update.sessionUpdate) {
+      case 'user_message_chunk':
+      case 'agent_message_chunk': {
+        this.flushThoughtBuffer()
+        const role = update.sessionUpdate === 'user_message_chunk' ? 'user' : 'assistant'
+        const block = toProtocolContentBlock(update.content)
+        if (!block) {
+          return
+        }
+
+        this.appendPart(role, block)
+        return
+      }
+
+      case 'agent_thought_chunk': {
+        if (update.content.type !== 'text') {
+          return
+        }
+
+        this.thoughtBuffer += update.content.text
+        return
+      }
+
+      case 'tool_call': {
+        this.flushThoughtBuffer()
+        this.upsertToolCall({
+          toolCallId: update.toolCallId,
+          toolName: update.title?.trim() || update.toolCallId,
+          status: normalizeToolStatus(update.status),
+          input: update.rawInput
+        })
+        return
+      }
+
+      case 'tool_call_update': {
+        this.flushThoughtBuffer()
+        const output = update.rawOutput ?? update.content
+        const normalizedStatus = normalizeToolStatus(update.status)
+        const isErrorStatus = normalizedStatus === 'failed' || normalizedStatus === 'error'
+
+        this.upsertToolCall({
+          toolCallId: update.toolCallId,
+          toolName: update.title?.trim() || undefined,
+          status: normalizedStatus,
+          input: update.rawInput,
+          output: isErrorStatus ? undefined : output,
+          error: isErrorStatus ? output : undefined
+        })
+        return
+      }
+
+      default:
+        return
+    }
+  }
+
+  async readTextFile(): Promise<acp.ReadTextFileResponse> {
+    throw new Error('readTextFile is not supported for replay capture.')
+  }
+
+  async writeTextFile(): Promise<acp.WriteTextFileResponse> {
+    throw new Error('writeTextFile is not supported for replay capture.')
+  }
+
+  private appendPart(
+    role: AgentProtocolHistoryMessage['role'],
+    part: Exclude<AgentProtocolHistoryPart, { type: 'tool-call' }>
+  ): void {
+    const message = this.ensureMessage(role)
+    const previousPart = message.parts[message.parts.length - 1]
+    if (part.type === 'text' && previousPart?.type === 'text') {
+      previousPart.text += part.text
+      return
+    }
+
+    if (part.type === 'reasoning' && previousPart?.type === 'reasoning') {
+      previousPart.text += part.text
+      return
+    }
+
+    message.parts.push(part)
+  }
+
+  private appendAssistantReasoning(text: string): void {
+    if (!text.trim()) {
+      return
+    }
+
+    this.appendPart('assistant', {
+      type: 'reasoning',
+      text
+    })
+  }
+
+  private flushThoughtBuffer(): void {
+    const thoughtText = this.thoughtBuffer
+    this.thoughtBuffer = ''
+    if (!thoughtText.trim()) {
+      return
+    }
+
+    this.appendAssistantReasoning(thoughtText)
+  }
+
+  private ensureMessage(role: AgentProtocolHistoryMessage['role']): AgentProtocolHistoryMessage {
+    const last = this.history[this.history.length - 1]
+    if (last && last.role === role) {
+      return last
+    }
+
+    const next: AgentProtocolHistoryMessage = {
+      role,
+      parts: []
+    }
+    this.history.push(next)
+    return next
+  }
+
+  private upsertToolCall(input: {
+    toolCallId: string
+    toolName?: string
+    status?: string
+    input?: unknown
+    output?: unknown
+    error?: unknown
+  }): void {
+    const existing = this.toolCalls.get(input.toolCallId)
+    if (existing) {
+      const message = this.history[existing.messageIndex]
+      const current = message?.parts[existing.partIndex]
+      if (!message || !current || current.type !== 'tool-call') {
+        this.toolCalls.delete(input.toolCallId)
+      } else {
+        message.parts[existing.partIndex] = {
+          ...current,
+          ...(input.toolName ? { toolName: input.toolName } : {}),
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.input !== undefined ? { input: input.input } : {}),
+          ...(input.output !== undefined ? { output: input.output } : {}),
+          ...(input.error !== undefined ? { error: input.error } : {})
+        }
+        return
+      }
+    }
+
+    const message = this.ensureMessage('assistant')
+    const part: AgentProtocolHistoryPart = {
+      type: 'tool-call',
+      toolCallId: input.toolCallId,
+      toolName: input.toolName ?? input.toolCallId,
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.input !== undefined ? { input: input.input } : {}),
+      ...(input.output !== undefined ? { output: input.output } : {}),
+      ...(input.error !== undefined ? { error: input.error } : {})
+    }
+    const partIndex = message.parts.push(part) - 1
+    this.toolCalls.set(input.toolCallId, {
+      messageIndex: this.history.length - 1,
+      partIndex
+    })
+  }
+}
+
+function toProtocolContentBlock(content: unknown): ProtocolContentBlock | undefined {
+  const block = content as Record<string, unknown>
+  const type = typeof block.type === 'string' ? block.type : ''
+
+  if (type === 'text') {
+    const text = typeof block.text === 'string' ? block.text : ''
+    if (!text) {
+      return undefined
+    }
+
+    return {
+      type: 'text',
+      text
+    }
+  }
+
+  if (type === 'image') {
+    const data = typeof block.data === 'string' ? block.data : ''
+    const mimeType = typeof block.mimeType === 'string' ? block.mimeType : ''
+    if (!data || !mimeType) {
+      return undefined
+    }
+
+    return {
+      type: 'image',
+      data,
+      mimeType
+    }
+  }
+
+  if (type === 'resource') {
+    const resource = block.resource as Record<string, unknown> | undefined
+    const uri = typeof resource?.uri === 'string' ? resource.uri : ''
+    const mimeType = typeof resource?.mimeType === 'string' ? resource.mimeType : ''
+    if (!uri || !mimeType) {
+      return undefined
+    }
+
+    const text = typeof resource?.text === 'string' ? resource.text : undefined
+    const data = typeof resource?.data === 'string' ? resource.data : undefined
+
+    return {
+      type: 'resource',
+      resource: {
+        uri,
+        mimeType,
+        ...(text ? { text } : {}),
+        ...(data ? { data } : {})
+      }
+    }
+  }
+
+  return undefined
+}
+
+function normalizeToolStatus(status: string | null | undefined): string | undefined {
+  const normalized = status?.trim().toLowerCase()
+  return normalized || undefined
+}
+
+function cloneHistoryPart(part: AgentProtocolHistoryPart): AgentProtocolHistoryPart {
+  if (part.type === 'resource') {
+    return {
+      type: 'resource',
+      resource: {
+        uri: part.resource.uri,
+        mimeType: part.resource.mimeType,
+        ...(part.resource.text ? { text: part.resource.text } : {}),
+        ...(part.resource.data ? { data: part.resource.data } : {})
+      }
+    }
+  }
+
+  if (part.type === 'tool-call') {
+    return {
+      type: 'tool-call',
+      toolCallId: part.toolCallId,
+      toolName: part.toolName,
+      ...(part.status ? { status: part.status } : {}),
+      ...(part.input !== undefined ? { input: part.input } : {}),
+      ...(part.output !== undefined ? { output: part.output } : {}),
+      ...(part.error !== undefined ? { error: part.error } : {})
+    }
+  }
+
+  if (part.type === 'image') {
+    return {
+      type: 'image',
+      data: part.data,
+      mimeType: part.mimeType
+    }
+  }
+
+  return {
+    type: part.type,
+    text: part.text
+  } as AgentProtocolHistoryPart
 }

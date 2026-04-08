@@ -379,7 +379,7 @@ The WebSocket connector:
 - ACP permission requests are auto-approved today.
 - Idle session cleanup is controlled by `gateway.idleTimeoutMs`.
 - HTTP streams can be resumed while a turn is still active via the configured SSE endpoints.
-- Attaching an existing ACP session restores server-side session context, but replayed history is intentionally not emitted back into channel/web chat logs.
+- The HTTP web shell hydrates attached ACP session history from `session/load` replay when the protocol adapter supports it.
 - Slash commands supported by the gateway:
   - `/new`: clear the chat's current ACP binding and start fresh on next message
   - `/list`: list attachable ACP sessions from the current agent

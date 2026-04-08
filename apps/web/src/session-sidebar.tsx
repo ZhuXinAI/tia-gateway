@@ -1,7 +1,18 @@
-import { PlusIcon, RefreshCwIcon, TrashIcon } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronRightIcon, FolderIcon, PlusIcon, RefreshCwIcon, TrashIcon } from 'lucide-react'
 import type { HttpSessionSummary } from './gateway-types'
 import { cn } from './lib/utils'
 import { Button } from './components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './components/ui/collapsible'
+import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem
+} from './components/ui/sidebar'
 
 type SessionSidebarProps = {
   collapsed?: boolean
@@ -17,6 +28,62 @@ type SessionSidebarProps = {
   onDeleteSession: (chatId: string) => void
 }
 
+type SessionGroup = {
+  key: string
+  workspacePath?: string
+  displayName: string
+  sessions: HttpSessionSummary[]
+}
+
+function toWorkspaceGroupMeta(cwd: string | undefined): {
+  key: string
+  workspacePath?: string
+  displayName: string
+} {
+  const trimmed = cwd?.trim() || ''
+  if (!trimmed) {
+    return {
+      key: '__no-workspace__',
+      displayName: 'No workspace'
+    }
+  }
+
+  const normalized = trimmed.replace(/\\/g, '/')
+  const withoutTrailingSlash = normalized.replace(/\/+$/, '') || '/'
+  const pathSegments = withoutTrailingSlash.split('/').filter(Boolean)
+  const displayName =
+    withoutTrailingSlash === '/' ? '/' : pathSegments[pathSegments.length - 1] || withoutTrailingSlash
+
+  return {
+    key: trimmed,
+    workspacePath: trimmed,
+    displayName
+  }
+}
+
+function groupSessionsByWorkspace(sessions: HttpSessionSummary[]): SessionGroup[] {
+  const groups = new Map<string, SessionGroup>()
+
+  for (const session of sessions) {
+    const { key, workspacePath, displayName } = toWorkspaceGroupMeta(session.cwd)
+    const existing = groups.get(key)
+
+    if (existing) {
+      existing.sessions.push(session)
+      continue
+    }
+
+    groups.set(key, {
+      key,
+      workspacePath,
+      displayName,
+      sessions: [session]
+    })
+  }
+
+  return [...groups.values()]
+}
+
 export function SessionSidebar({
   collapsed,
   sessions,
@@ -30,6 +97,19 @@ export function SessionSidebar({
   onCreateSession,
   onDeleteSession
 }: SessionSidebarProps): JSX.Element {
+  const groupedSessions = useMemo(() => groupSessionsByWorkspace(sessions), [sessions])
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setOpenGroups((previous) => {
+      const next: Record<string, boolean> = {}
+      for (const [index, group] of groupedSessions.entries()) {
+        next[group.key] = previous[group.key] ?? index === 0
+      }
+      return next
+    })
+  }, [groupedSessions])
+
   return (
     <aside
       className={cn(
@@ -66,44 +146,91 @@ export function SessionSidebar({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1">
-        {sessions.map((session) => {
-          const isActive = session.chatId === activeChatId
+      <div className="flex flex-col gap-2">
+        {groupedSessions.map((group) => {
+          const isOpen = openGroups[group.key] ?? false
 
           return (
-            <div
-              key={session.chatId}
-              className={cn(
-                'group flex h-9 items-center gap-2 rounded-lg transition-colors',
-                isActive ? 'bg-muted' : 'hover:bg-muted focus-within:bg-muted'
-              )}
+            <Collapsible
+              key={group.key}
+              open={isOpen}
+              onOpenChange={(nextOpen) => {
+                setOpenGroups((previous) => ({
+                  ...previous,
+                  [group.key]: nextOpen
+                }))
+              }}
             >
-              <button
-                className="flex h-full min-w-0 flex-1 items-center px-3 text-start text-sm"
-                onClick={() => onSelectSession(session.chatId)}
-                type="button"
-              >
-                <span className="min-w-0 flex-1 truncate">{session.label || 'New Chat'}</span>
-              </button>
-
-              {session.canDelete ? (
-                <Button
-                  aria-label={`Remove ${session.label}`}
-                  className="mr-1 size-7 p-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                  disabled={deletingChatId === session.chatId}
-                  onClick={() => onDeleteSession(session.chatId)}
-                  size="icon"
+              <SidebarGroup>
+                <CollapsibleTrigger
+                  className="w-full rounded-md hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  title={group.workspacePath || group.displayName}
                   type="button"
-                  variant="ghost"
                 >
-                  {deletingChatId === session.chatId ? (
-                    <RefreshCwIcon className="size-4 animate-spin" />
-                  ) : (
-                    <TrashIcon className="size-4" />
-                  )}
-                </Button>
-              ) : null}
-            </div>
+                  <SidebarGroupLabel className="pointer-events-none min-w-0 px-2 py-1.5">
+                    <ChevronRightIcon
+                      className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')}
+                    />
+                    <FolderIcon className="size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
+                      {group.displayName}
+                    </span>
+                    <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {group.sessions.length}
+                    </span>
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu className="ml-5 mt-0.5">
+                      {group.sessions.map((session) => {
+                        const isActive = session.chatId === activeChatId
+
+                        return (
+                          <SidebarMenuItem key={session.chatId}>
+                            <SidebarMenuButton
+                              className="pr-9"
+                              isActive={isActive}
+                              onClick={() => onSelectSession(session.chatId)}
+                              type="button"
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                {session.label || 'New Chat'}
+                              </span>
+                            </SidebarMenuButton>
+
+                            {session.canDelete ? (
+                              <SidebarMenuAction
+                                aria-label={`Remove ${session.label}`}
+                                asChild
+                                className="absolute top-1/2 right-0 -translate-y-1/2 bg-transparent hover:bg-muted"
+                                disabled={deletingChatId === session.chatId}
+                                onClick={() => onDeleteSession(session.chatId)}
+                                type="button"
+                              >
+                                <Button
+                                  disabled={deletingChatId === session.chatId}
+                                  size="icon"
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  {deletingChatId === session.chatId ? (
+                                    <RefreshCwIcon className="size-4 animate-spin" />
+                                  ) : (
+                                    <TrashIcon className="size-4" />
+                                  )}
+                                </Button>
+                              </SidebarMenuAction>
+                            ) : null}
+                          </SidebarMenuItem>
+                        )
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </SidebarGroup>
+            </Collapsible>
           )
         })}
       </div>

@@ -361,6 +361,44 @@ test('HttpChannel exposes unified ACP session endpoints for the web shell', asyn
             }
           ]
         },
+        async loadSessionHistory() {
+          return [
+            {
+              role: 'user',
+              parts: [
+                {
+                  type: 'text',
+                  text: 'Hello from loaded ACP history'
+                }
+              ]
+            },
+            {
+              role: 'assistant',
+              parts: [
+                {
+                  type: 'reasoning',
+                  text: 'I should inspect files first.'
+                },
+                {
+                  type: 'tool-call',
+                  toolCallId: 'replay-tool-1',
+                  toolName: 'List',
+                  status: 'completed',
+                  input: {
+                    path: '/Users/windht/Dev/buildmind-gateway'
+                  },
+                  output: {
+                    entries: 2
+                  }
+                },
+                {
+                  type: 'text',
+                  text: 'History replay works.'
+                }
+              ]
+            }
+          ]
+        },
         async stop() {}
       }
     },
@@ -380,6 +418,52 @@ test('HttpChannel exposes unified ACP session endpoints for the web shell', asyn
     assert.equal(listPayload.sessions?.length, 1)
     assert.equal(listPayload.sessions?.[0]?.acpSessionId, 'session-1')
     assert.equal(listPayload.sessions?.[0]?.status, 'attached')
+    assert.ok(listPayload.sessions?.[0]?.chatId)
+
+    const attachedDetailResponse = await fetch(
+      `http://127.0.0.1:${port}/chat/sessions/${listPayload.sessions?.[0]?.chatId ?? ''}`
+    )
+    assert.equal(attachedDetailResponse.status, 200)
+    const attachedDetailPayload = (await attachedDetailResponse.json()) as {
+      session?: {
+        messageCount?: number
+        messages?: Array<{
+          role?: string
+          parts?: Array<Record<string, unknown>>
+        }>
+      }
+    }
+    assert.equal(attachedDetailPayload.session?.messageCount, 2)
+    assert.equal(attachedDetailPayload.session?.messages?.[0]?.role, 'user')
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[0]?.parts?.[0]?.text,
+      'Hello from loaded ACP history'
+    )
+    assert.equal(attachedDetailPayload.session?.messages?.[1]?.role, 'assistant')
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[1]?.parts?.[0]?.type,
+      'reasoning'
+    )
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[1]?.parts?.[0]?.text,
+      'I should inspect files first.'
+    )
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[1]?.parts?.[1]?.type,
+      'dynamic-tool'
+    )
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[1]?.parts?.[1]?.toolName,
+      'List'
+    )
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[1]?.parts?.[1]?.state,
+      'output-available'
+    )
+    assert.equal(
+      attachedDetailPayload.session?.messages?.[1]?.parts?.[2]?.text,
+      'History replay works.'
+    )
 
     const createdResponse = await fetch(`http://127.0.0.1:${port}/chat/sessions`, {
       method: 'POST'

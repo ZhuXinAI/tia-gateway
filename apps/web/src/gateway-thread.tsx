@@ -29,17 +29,20 @@ export function GatewayThread({
         const authHeaders = buildChatHeaders(token)
         authHeaders.forEach((value, key) => headers.set(key, value))
 
-        const nextBody =
+        const baseBody =
           options.body && typeof options.body === 'object'
-            ? {
-                ...(options.body as Record<string, unknown>),
-                id: chatId,
-                chatId
-              }
-            : {
-                id: chatId,
-                chatId
-              }
+            ? (options.body as Record<string, unknown>)
+            : {}
+
+        const nextBody = {
+          ...baseBody,
+          id: chatId,
+          chatId,
+          messages: options.messages,
+          trigger: options.trigger,
+          messageId: options.messageId,
+          metadata: options.requestMetadata
+        }
 
         return {
           headers,

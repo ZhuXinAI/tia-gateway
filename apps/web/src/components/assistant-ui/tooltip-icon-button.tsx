@@ -1,5 +1,4 @@
 import { forwardRef, type ComponentPropsWithRef } from 'react'
-import { Slot } from '@radix-ui/react-slot'
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { Button } from '../ui/button'
@@ -22,7 +21,7 @@ export const TooltipIconButton = forwardRef<HTMLButtonElement, TooltipIconButton
             className={cn('aui-button-icon size-6 p-1', className)}
             ref={ref}
           >
-            <Slot>{children}</Slot>
+            {children}
             <span className="aui-sr-only sr-only">{tooltip}</span>
           </Button>
         </TooltipTrigger>

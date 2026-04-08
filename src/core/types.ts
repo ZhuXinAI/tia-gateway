@@ -129,6 +129,27 @@ export interface AgentProtocolTurnResult {
   stopReason?: string
 }
 
+export type AgentProtocolHistoryPart =
+  | ProtocolContentBlock
+  | {
+      type: 'reasoning'
+      text: string
+    }
+  | {
+      type: 'tool-call'
+      toolCallId: string
+      toolName: string
+      status?: string
+      input?: unknown
+      output?: unknown
+      error?: unknown
+    }
+
+export type AgentProtocolHistoryMessage = {
+  role: 'user' | 'assistant'
+  parts: AgentProtocolHistoryPart[]
+}
+
 export type AgentProtocolSessionSummary = {
   sessionId: string
   cwd: string
@@ -142,6 +163,10 @@ export interface AgentProtocolAdapter {
   closeSession(sessionKey: string): Promise<void>
   listSessions?(input?: { cwd?: string }): Promise<AgentProtocolSessionSummary[]>
   attachSession?(sessionKey: string, sessionId: string): Promise<void>
+  loadSessionHistory?(input: {
+    sessionId: string
+    cwd?: string
+  }): Promise<AgentProtocolHistoryMessage[]>
   resetSession?(sessionKey: string): Promise<void>
   stop(): Promise<void>
 }

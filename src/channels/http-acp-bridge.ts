@@ -9,6 +9,8 @@ import {
 import { defaultStorageDir } from '../config-store.js'
 import type {
   AgentProtocolAdapter,
+  AgentProtocolHistoryPart,
+  AgentProtocolHistoryMessage,
   AgentProtocolSessionSummary
 } from '../core/types.js'
 import type { Logger } from '../logging.js'
@@ -53,6 +55,7 @@ type ProviderEntry = {
 
 const SESSION_LIST_TIMEOUT_MS = 8_000
 const SESSION_INIT_TIMEOUT_MS = 15_000
+const SESSION_HISTORY_TIMEOUT_MS = 15_000
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -139,6 +142,187 @@ function deriveSessionLabel(
   return acpSessionId || trimmedFallback || 'New session'
 }
 
+function toUiMessagesFromProtocolHistory(
+  history: AgentProtocolHistoryMessage[]
+): UIMessage[] {
+  const messages: UIMessage[] = []
+
+  for (const message of history) {
+    const parts: UIMessage['parts'] = []
+
+    for (const part of message.parts) {
+      const uiPart = toUiMessagePartFromHistoryPart(part)
+      if (!uiPart) {
+        continue
+      }
+
+      parts.push(uiPart)
+    }
+
+    if (parts.length === 0) {
+      continue
+    }
+
+    messages.push({
+      id: `replay-${randomUUID()}`,
+      role: message.role,
+      parts
+    } as UIMessage)
+  }
+
+  return messages
+}
+
+function toUiMessagePartFromHistoryPart(
+  part: AgentProtocolHistoryPart
+): UIMessage['parts'][number] | undefined {
+  if (part.type === 'text') {
+    if (!part.text) {
+      return undefined
+    }
+
+    return {
+      type: 'text',
+      text: part.text
+    }
+  }
+
+  if (part.type === 'reasoning') {
+    if (!part.text) {
+      return undefined
+    }
+
+    return {
+      type: 'reasoning',
+      text: part.text,
+      state: 'done'
+    }
+  }
+
+  if (part.type === 'image') {
+    return {
+      type: 'file',
+      url: `data:${part.mimeType};base64,${part.data}`,
+      mediaType: part.mimeType
+    }
+  }
+
+  if (part.type === 'resource') {
+    return {
+      type: 'file',
+      url: part.resource.uri,
+      mediaType: part.resource.mimeType
+    }
+  }
+
+  return toDynamicToolPart(part)
+}
+
+function toDynamicToolPart(
+  part: Extract<AgentProtocolHistoryPart, { type: 'tool-call' }>
+): UIMessage['parts'][number] {
+  const normalizedStatus = normalizeHistoryToolStatus(part.status)
+  const toolName = part.toolName?.trim() || part.toolCallId
+  const input = part.input
+  const output = part.output
+  const errorText = toToolErrorText(part.error ?? part.output)
+
+  if (
+    normalizedStatus === 'failed' ||
+    normalizedStatus === 'error' ||
+    normalizedStatus === 'cancelled' ||
+    normalizedStatus === 'canceled' ||
+    (part.error !== undefined && part.error !== null)
+  ) {
+    return {
+      type: 'dynamic-tool',
+      toolName,
+      toolCallId: part.toolCallId,
+      title: toolName,
+      state: 'output-error',
+      input,
+      errorText:
+        errorText ??
+        (normalizedStatus === 'cancelled' || normalizedStatus === 'canceled'
+          ? `${toolName} was cancelled.`
+          : `${toolName} failed.`)
+    }
+  }
+
+  if (
+    normalizedStatus === 'completed' ||
+    normalizedStatus === 'complete' ||
+    normalizedStatus === 'done' ||
+    normalizedStatus === 'succeeded' ||
+    normalizedStatus === 'success' ||
+    output !== undefined
+  ) {
+    return {
+      type: 'dynamic-tool',
+      toolName,
+      toolCallId: part.toolCallId,
+      title: toolName,
+      state: 'output-available',
+      input,
+      output: output ?? { status: normalizedStatus ?? 'completed' }
+    }
+  }
+
+  return {
+    type: 'dynamic-tool',
+    toolName,
+    toolCallId: part.toolCallId,
+    title: toolName,
+    state: 'input-available',
+    input
+  }
+}
+
+function normalizeHistoryToolStatus(status: string | undefined): string | undefined {
+  const normalized = status?.trim().toLowerCase()
+  return normalized || undefined
+}
+
+function toToolErrorText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || undefined
+  }
+
+  if (Array.isArray(value)) {
+    const textParts = value
+      .map((entry) => {
+        if (
+          entry &&
+          typeof entry === 'object' &&
+          'type' in entry &&
+          entry.type === 'text' &&
+          'text' in entry &&
+          typeof entry.text === 'string'
+        ) {
+          return entry.text.trim()
+        }
+
+        return undefined
+      })
+      .filter((entry): entry is string => Boolean(entry))
+
+    if (textParts.length > 0) {
+      return textParts.join('\n')
+    }
+  }
+
+  if (value == null) {
+    return undefined
+  }
+
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 export class HttpAcpBridge {
   private readonly logger: Logger
   private readonly sessionStore: HttpSessionStore
@@ -175,13 +359,14 @@ export class HttpAcpBridge {
 
   async createSession(input: { label?: string } = {}): Promise<HttpSessionSummary> {
     const session = await this.sessionStore.create({
-      label: input.label
+      label: input.label,
+      cwd: this.options.config.agent.cwd
     })
     return summarizeSession(session)
   }
 
   async getSession(chatId: string): Promise<HttpSessionDetail | undefined> {
-    const session = await this.sessionStore.get(chatId)
+    const session = await this.getSessionWithHydratedHistory(chatId)
     if (!session) {
       return undefined
     }
@@ -276,7 +461,8 @@ export class HttpAcpBridge {
 
     return this.sessionStore.create({
       chatId,
-      label: deriveSessionLabel(messages, 'New session')
+      label: deriveSessionLabel(messages, 'New session'),
+      cwd: this.options.config.agent.cwd
     })
   }
 
@@ -344,6 +530,55 @@ export class HttpAcpBridge {
     }
 
     return this.sessionStore.list()
+  }
+
+  private async getSessionWithHydratedHistory(
+    chatId: string
+  ): Promise<StoredHttpSessionRecord | undefined> {
+    const session = await this.sessionStore.get(chatId)
+    if (!session) {
+      return undefined
+    }
+
+    const hasReplayOnlyMessages =
+      session.messages.length > 0 &&
+      session.messages.every((message) => message.id.startsWith('replay-'))
+
+    if (
+      !session.acpSessionId ||
+      (session.messages.length > 0 && !hasReplayOnlyMessages) ||
+      !this.options.protocol.loadSessionHistory
+    ) {
+      return session
+    }
+
+    try {
+      const replayMessages = await withTimeout(
+        this.options.protocol.loadSessionHistory({
+          sessionId: session.acpSessionId,
+          cwd: session.cwd ?? this.options.config.agent.cwd
+        }),
+        SESSION_HISTORY_TIMEOUT_MS,
+        `ACP session replay ${session.acpSessionId}`
+      )
+
+      const hydratedMessages = toUiMessagesFromProtocolHistory(replayMessages)
+      if (hydratedMessages.length === 0) {
+        return session
+      }
+
+      const updated = await this.sessionStore.update(chatId, {
+        messages: hydratedMessages,
+        label: deriveSessionLabel(hydratedMessages, session.label, session.acpSessionId),
+        updatedAt: session.updatedAt
+      })
+      return updated ?? session
+    } catch (error) {
+      this.logger.warn(`Failed to replay ACP history for ${session.acpSessionId}.`, {
+        errorMessage: toErrorMessage(error)
+      })
+      return session
+    }
   }
 
   private async getOrCreateProvider(

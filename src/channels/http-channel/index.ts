@@ -277,6 +277,12 @@ export class HttpChannel extends AbstractChannel {
     }
 
     if (request.method === 'GET' && this.serveWebApp) {
+      if (url.pathname === '/favicon.ico') {
+        response.writeHead(204, CORS_HEADERS)
+        response.end()
+        return
+      }
+
       if (url.pathname === '/' || url.pathname === '/app.js' || url.pathname === '/app.css') {
         await this.handleStaticWebRequest(url, response)
         return
